@@ -1,7 +1,9 @@
+import datetime
 import glob
 import os
-import datetime
+
 import pandas as pd
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from pyecharts import options as opts
@@ -14,6 +16,8 @@ from st_aggrid.shared import GridUpdateMode
 from streamlit_echarts import st_pyecharts
 
 rulefolder = "../data/rules"
+# backendurl = "http://backend.docker:8000"
+backendurl = "http://localhost:8000"
 
 
 @st.cache
@@ -115,3 +119,19 @@ def get_nowdate():
     now = datetime.datetime.now()
     now_str = now.strftime("%Y%m%d")
     return now_str
+
+
+def picurl2table(picurl):
+    try:
+        print(picurl)
+        url = backendurl + "/ocr2table"
+        payload = {"url": picurl}
+        res = requests.post(url, params=payload)
+        print(res)
+        result = res.json()
+        # convert result to dataframe
+        result_df = pd.read_json(result)
+    except Exception as e:
+        print("转换错误: " + str(e))
+        result_df = pd.DataFrame()
+    return result_df

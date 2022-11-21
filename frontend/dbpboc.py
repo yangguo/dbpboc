@@ -1,17 +1,23 @@
 import glob
 import os
-import time
 import random
-import pandas as pd
-import streamlit as st
-from snapshot import get_chrome_driver
-from selenium.webdriver.common.by import By
-from utils import get_now
+import time
+import urllib
 from urllib.parse import unquote
 
+import pandas as pd
 
-penpboc = "pboc"
-temppath = "pboc/temp"
+# import wget
+import pdfplumber
+import requests
+import streamlit as st
+from doc2text import pdfurl2tableocr, picurl2table
+from selenium.webdriver.common.by import By
+from snapshot import get_chrome_driver
+from utils import get_now
+
+penpboc = "../pboc"
+temppath = r"../data/temp"
 
 # choose orgname index
 org2name = {
@@ -73,7 +79,7 @@ org2url = {
     "厦门": "xiamen",
     "海口": "haikou",
     "大连": "dalian",
-    "广州": "guangzhou",
+    "广州": "http://guangzhou.pbc.gov.cn/guangzhou/129142/129159/129166/20713/index",
     "太原": "taiyuan",
     "石家庄": "shijiazhuang",
     "总部": "zongbu",
@@ -82,7 +88,7 @@ org2url = {
     "沈阳": "shenyang",
     "长沙": "changsha",
     "深圳": "shenzhen",
-    "武汉": "wuhan",
+    "武汉": "http://wuhan.pbc.gov.cn/wuhan/123472/123493/123502/16682/index",
     "银川": "yinchuan",
     "西安": "xian",
     "哈尔滨": "haerbin",
@@ -141,6 +147,8 @@ def display_summary():
     oldsum2 = get_pbocdetail("")
     # get length of old eventdf
     oldlen2 = len(oldsum2)
+    # display isnull sum
+    st.write(oldsum2.isnull().sum())
     # get min and max date of old eventdf
     min_date2 = oldsum2["作出行政处罚决定日期"].min()
     max_date2 = oldsum2["作出行政处罚决定日期"].max()
@@ -171,8 +179,11 @@ def get_pbocsum(orgname):
     org_name_index = org2name[orgname]
     beginwith = "pbocsum" + org_name_index
     pendf = get_csvdf(penpboc, beginwith)
+    cols = ["name", "date", "link", "sum"]
     # if not empty
     if len(pendf) > 0:
+        # filter by cols
+        pendf = pendf[cols]
         # format date
         pendf["发布日期"] = pd.to_datetime(pendf["date"]).dt.date
     return pendf
@@ -196,6 +207,9 @@ def get_pbocdetail(orgname):
     if len(d0) > 0:
         # format date
         d0["发布日期"] = pd.to_datetime(d0["date"]).dt.date
+    # if orgname != "":
+    #     st.write(orgname)
+    #     d0["区域"] = orgname
     # fillna
     d0.fillna("", inplace=True)
     return d0
@@ -205,18 +219,18 @@ def display_suminfo(df):
     # get length of old eventdf
     oldlen = len(df)
     if oldlen > 0:
+        # get unique link number
+        linkno = df["link"].nunique()
         # get min and max date of old eventdf
         min_date = df["发布日期"].min()
         max_date = df["发布日期"].max()
-    else:
-        min_date = ""
-        max_date = ""
-    # use metric for length and date
-    col1, col2 = st.columns([1, 3])
-    # col1.metric("案例总数", oldlen)
-    col1.write(f"案例总数：{oldlen}")
-    # col2.metric("日期范围", f"{min_date} - {max_date}")
-    col2.write(f"日期范围：{min_date} - {max_date}")
+        # use metric for length and date
+        col1, col2, col3 = st.columns([1, 1, 1])
+        # col1.metric("案例总数", oldlen)
+        col1.write(f"案例总数：{oldlen}")
+        col2.write(f"链接数：{linkno}")
+        # col2.metric("日期范围", f"{min_date} - {max_date}")
+        col3.write(f"日期范围：{min_date} - {max_date}")
 
 
 def display_pbocsum():
@@ -227,14 +241,14 @@ def display_pbocsum():
         display_suminfo(oldsum)
         st.markdown("详情")
         dtl = get_pbocdetail(org_name)
-        dtl1 = dtl.drop_duplicates(subset=["name", "date", "link"])
-        display_suminfo(dtl1)
+        # dtl1 = dtl.drop_duplicates(subset=["name", "date", "link"])
+        display_suminfo(dtl)
 
 
 # get sumeventdf in page number range
 def get_sumeventdf(orgname, start, end):
     org_name_index = org2name[orgname]
-    browser = get_chrome_driver()
+    browser = get_chrome_driver(temppath)
 
     baseurl = org2url[orgname]
 
@@ -283,6 +297,7 @@ def get_sumeventdf(orgname, start, end):
         st.info("finish: " + str(count))
         count += 1
 
+    browser.quit()
     sumdf = pd.concat(resultls)
     savecsv = "tempsumall" + org_name_index + str(count)
     savedf(sumdf, savecsv)
@@ -299,7 +314,7 @@ def savedf(df, basename):
 def update_sumeventdf(currentsum, orgname):
     org_name_index = org2name[orgname]
     # get detail
-    oldsum = get_pbocdetail(orgname)
+    oldsum = get_pbocsum(orgname)
     if oldsum.empty:
         oldidls = []
     else:
@@ -318,9 +333,6 @@ def update_sumeventdf(currentsum, orgname):
         nowstr = get_now()
         savename = "pbocsum" + org_name_index + nowstr
         savedf(newdf, savename)
-        # save to update dtl list
-        toupdname = "pboctoupd" + org_name_index
-        savedf(newdf, toupdname)
     return newdf
 
 
@@ -371,7 +383,7 @@ def get_eventdetail(eventsum, orgname):
     resultls = []
     errorls = []
     count = 0
-    for durl in detaills[8:11]:
+    for durl in detaills:
         st.info(str(count) + " begin")
         st.info("url:" + durl)
         try:
@@ -400,12 +412,17 @@ def get_eventdetail(eventsum, orgname):
                     dfl = pd.DataFrame()
                 dfl["link"] = durl
                 dfl["download"] = downurl
+                filename = os.path.basename(durl)
+                # unquote to decode url
+                filename = unquote(filename)
+                dfl["file"] = filename
                 st.write(dfl)
                 resultls.append(dfl)
 
             if len(downurl) == 0 and df.empty:
                 dfl = pd.DataFrame(index=[0])
                 dfl["link"] = durl
+                dfl["download"] = durl
                 filename = os.path.basename(durl)
                 # unquote to decode url
                 filename = unquote(filename)
@@ -474,6 +491,7 @@ def get_eventdetail(eventsum, orgname):
         st.info("finish: " + str(count))
         count += 1
 
+    browser.quit()
     # print errorls
     if len(errorls) > 0:
         st.error("error list:")
@@ -518,28 +536,50 @@ def savetemp(df, basename):
 
 
 # download attachment
-def download_attachment(lendf, orgname):
+def download_attachment(linkurl, downloadls, orgname):
     org_name_index = org2name[orgname]
     browser = get_chrome_driver(temppath)
 
-    dwndf = lendf[lendf["download"].notnull()]
-    # get link url
-    linkurl = dwndf["link"]
-    # get download url
-    downloadls = dwndf["download"].tolist()
+    # dwndf = lendf[lendf[downcol].notnull()]
+    # # get link url
+    # linkurl = dwndf["link"]
+    # # get download url
+    # downloadls = dwndf[downcol].tolist()
 
     resultls = []
     errorls = []
     count = 0
     for link, url in zip(linkurl, downloadls):
-        st.info(str(count) + "begin")
-        st.info("url:" + url)
+        st.info("begin: " + str(count))
+        st.info("url: " + url)
         try:
-            browser.get(url)
             # get filename from url
             filename = os.path.basename(url)
             # unquote to decode url
             filename = unquote(filename)
+            # save path
+            savepath = os.path.join(temppath, filename)
+            # download file by click the link
+            browser.get(url)
+
+            ls2 = browser.find_elements(By.XPATH, "//table//table[2]//a")
+
+            if len(ls2) > 0:
+                dwnlink = ls2[0].get_attribute("href")
+                if dwnlink:
+                    browser.get(dwnlink)
+                    url = dwnlink
+                    filename = os.path.basename(url)
+                    # unquote to decode url
+                    filename = unquote(filename)
+            # response = requests.get(url, stream=True)
+            # with requests.get(url, stream=True) as response:
+            #     with open(savepath, 'wb') as f:
+            #         for chunk in response.iter_content(1024*8):
+            #             if chunk:
+            #                 f.write(chunk)
+            #                 f.flush()
+
             datals = {"link": link, "download": url, "file": filename}
             df = pd.DataFrame(datals, index=[0])
             resultls.append(df)
@@ -554,26 +594,111 @@ def download_attachment(lendf, orgname):
             savename = "temptofile-" + org_name_index + str(count + 1)
             savetemp(tempdf, savename)
 
-        wait = random.randint(2, 20)
+        wait = random.randint(2, 10)
         time.sleep(wait)
         st.info("finish: " + str(count))
         count += 1
 
     if resultls:
         misdf = pd.concat(resultls)
-        filedf = lendf[lendf["download"].isnull()]
-        tabledf = pd.concat([filedf, misdf])
-        savename = "pboctofile" + org_name_index
+        # filedf = lendf[lendf["download"].isnull()]
+        # tabledf = pd.concat([filedf, misdf])
+        tabledf = misdf
+        savename = "pboctofile" + org_name_index + get_now()
         # reset index
         tabledf.reset_index(drop=True, inplace=True)
         savetemp(tabledf, savename)
     else:
         misdf = pd.DataFrame()
+    # quit browser
+    browser.quit()
     return misdf
 
 
 def get_pboctodownload(orgname):
     org_name_index = org2name[orgname]
-    beginwith = "temp/pboctodownload" + org_name_index
+    beginwith = temppath + "/pboctodownload" + org_name_index
     pendf = get_csvdf(penpboc, beginwith)
     return pendf
+
+
+def get_pboctotable(orgname):
+    org_name_index = org2name[orgname]
+    beginwith = temppath + "/pboctotable" + org_name_index
+    pendf = get_csvdf(penpboc, beginwith)
+    # fillna
+    pendf.fillna("", inplace=True)
+    return pendf
+
+
+def get_pboctofile(orgname):
+    org_name_index = org2name[orgname]
+    beginwith = temppath + "/pboctofile" + org_name_index
+    pendf = get_csvdf(penpboc, beginwith)
+    return pendf
+
+
+def save_pbocdetail(df, orgname):
+    org_name_index = org2name[orgname]
+    # get sum
+    sumdf = get_pbocsum(orgname)
+    # merge with df
+    dfupd = pd.merge(df, sumdf, left_on="link", right_on="link", how="left")
+    savename = penpboc + "/pbocdtl" + org_name_index + get_now()
+    savedf(dfupd, savename)
+
+
+def pdf2table(pdffile):
+    pagels = []
+    with pdfplumber.open(pdffile) as pdf:
+        for page in pdf.pages:
+            tbls = []
+            for table in page.extract_tables():
+                df = pd.DataFrame(table)
+                tbls.append(df)
+            #                 df=pd.DataFrame(tbls)
+            print(tbls)
+            if tbls:
+                pagels.append(tbls[0])
+
+    # use ocr
+    print(pdffile)
+    df = pdfurl2tableocr(pdffile, temppath)
+    if df is not None:
+        pagels.append(df)
+
+    if pagels:
+        alltb = pd.concat(pagels)
+        # reset index
+        alltb.reset_index(drop=True, inplace=True)
+    else:
+        alltb = pd.DataFrame()
+    if len(pagels) != 1:
+        print("page no", len(pagels))
+        print("check file", pdffile)
+
+        # savepath=os.path.splitext(pdffile)[0]+'.csv'
+        # savename=os.path.basename(savepath)
+        # print(savename)
+        # alltb.to_csv(savename)
+
+    return alltb
+
+
+def save_pboctable(df, savecols, orgname):
+    org_name_index = org2name[orgname]
+    savename = "pboctotable" + org_name_index + get_now()
+    # set columns
+    df.columns = savecols + ["link", "file"]
+    savetemp(df, savename)
+
+
+def mergetable(df, col):
+    df[col].fillna(method="ffill", inplace=True)
+    # print(df)
+    # fillna with ''
+    df.fillna("", inplace=True)
+    mergecol = [col, "link"]
+    # merge columns
+    dfu = df.groupby(mergecol).agg(lambda x: "".join(x)).reset_index()
+    return dfu
