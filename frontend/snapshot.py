@@ -74,6 +74,8 @@ def get_chrome_driver(folder):
         "safebrowsing_for_trusted_sources_enabled": False,
         # not open pdf
         "plugins.always_open_pdf_externally": True,
+        # not open image
+        "profile.default_content_setting_values.automatic_downloads": 1,
     }
 
     options.add_experimental_option("prefs", prefs)

@@ -6,12 +6,15 @@ import streamlit as st
 
 temppath = "../data/temp"
 # backendurl = "http://backend.docker:8000"
-backendurl = "http://localhost:8000"
+# backendurl = "http://localhost:8000"
 
 from dbpboc import (
+    dfdelcol,
+    display_eventdetail,
     display_pbocsum,
     display_summary,
     download_attachment,
+    download_pbocsum,
     get_eventdetail,
     get_pbocdetail,
     get_pboctodownload,
@@ -32,6 +35,8 @@ from doc2text import (
     docx2pdf,
     docxconvertion,
     get_convertfname,
+    img_to_pdf,
+    picurl2table,
     word2df,
 )
 
@@ -92,6 +97,7 @@ def main():
         "案例更新",
         "附件处理",
         "案例分类",
+        "案例下载",
     ]
 
     choice = st.sidebar.selectbox("选择", menu)
@@ -165,21 +171,99 @@ def main():
     elif choice == "案例搜索":
         st.subheader("案例搜索")
 
-        df = get_pbocdetail("")
-        loclist = df["区域"].unique().tolist()
-        with st.form(key="my_form"):
-            title_text = st.text_input("搜索当事人关键词")
-            location_text = st.selectbox("选择地区", loclist)
-            submit_button = st.form_submit_button(label="搜索")
+        if "search_result_pboc" not in st.session_state:
+            st.session_state["search_result_pboc"] = None
+        if "keywords_pboc" not in st.session_state:  # 生成word的session初始化
+            st.session_state["keywords_pboc"] = []
 
-        if submit_button:
-            st.write("处罚列表")
-            sampledf = searchpboc(df, title_text, location_text)
-            total = len(sampledf)
-            st.sidebar.write("总数:", total)
-            # pd.set_option('colwidth',40)
+        resls = []
+        for org_name in cityls:
+            df = get_pbocdetail(org_name)
+            resls.append(df)
+        dfl = pd.concat(resls)
+        # get min and max date of old eventdf
+        min_date = dfl["发布日期"].min()
+        max_date = dfl["发布日期"].max()
 
-            st.table(sampledf)
+        # loclist = dfl["区域"].unique().tolist()
+        loclist = cityls
+        # one years ago
+        one_year_ago = max_date - pd.Timedelta(days=365 * 1)
+
+        # use form
+        with st.form("搜索案例"):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # input date range
+                start_date = st.date_input(
+                    "开始日期", value=one_year_ago, min_value=min_date
+                )
+                # input wenhao keyword
+                wenhao_text = st.text_input("文号关键词")
+                # input people keyword
+                people_text = st.text_input("当事人关键词")
+                # input event keyword
+                event_text = st.text_input("案情关键词")
+            with col2:
+                end_date = st.date_input("结束日期", value=max_date, min_value=min_date)
+                # input penalty keyword
+                penalty_text = st.text_input("处罚决定关键词")
+                # input org keyword
+                org_text = st.text_input("处罚机关关键词")
+                # choose province using multiselect
+                province = st.multiselect("处罚区域", loclist)
+            # search button
+            searchbutton = st.form_submit_button("搜索")
+
+        if searchbutton:
+            # if text are all empty
+            if (
+                wenhao_text == ""
+                and people_text == ""
+                and event_text == ""
+                # and law_text == ""
+                and penalty_text == ""
+                and org_text == ""
+            ):
+                st.warning("请输入搜索关键词")
+            if province == []:
+                province = loclist
+            st.session_state["keywords_pboc"] = [
+                start_date,
+                end_date,
+                wenhao_text,
+                people_text,
+                event_text,
+                penalty_text,
+                org_text,
+                province,
+            ]
+            search_df = searchpboc(
+                dfl,
+                start_date,
+                end_date,
+                wenhao_text,
+                people_text,
+                event_text,
+                penalty_text,
+                org_text,
+                province,
+            )
+            # save search_df to session state
+            st.session_state["search_result_pboc"] = search_df
+        else:
+            search_df = st.session_state["search_result_pboc"]
+
+        if search_df is None:
+            st.error("请先搜索")
+            st.stop()
+
+        if len(search_df) > 0:
+            # display eventdetail
+            display_eventdetail(search_df)
+        else:
+            st.warning("没有搜索结果")
 
     elif choice == "附件处理":
         st.subheader("附件处理")
@@ -205,11 +289,14 @@ def main():
                     downloadlink = dwndf[downcol].tolist()
                     linkls = dwndf["link"].tolist()
                 else:
-                    downcol = "file"
-                    # get download column list
-                    dwndf = lendf[lendf[downcol].notnull()]
-                    downloadlink = dwndf["link"].tolist()
-                    linkls = dwndf["link"].tolist()
+                    downloadlink = []
+                    linkls = []
+                # else:
+                #     downcol = "file"
+                #     # get download column list
+                #     dwndf = lendf[lendf[downcol].notnull()]
+                #     downloadlink = dwndf["link"].tolist()
+                #     linkls = dwndf["link"].tolist()
             else:
                 downloadlink = []
                 linkls = []
@@ -219,6 +306,13 @@ def main():
             newsum_len = len(downloadlink)
             # display sumeventdf
             st.success(f"共{newsum_len}条案例待更新")
+
+            # get start and end index
+            start_index = st.number_input("开始索引", value=0, min_value=0)
+            end_index = st.number_input("结束索引", value=newsum_len, min_value=0)
+            # get download link
+            downloadlink = downloadlink[start_index:end_index]
+            linkls = linkls[start_index:end_index]
 
             # download attachment button
             downloadbutton = st.sidebar.button("下载附件")
@@ -240,7 +334,7 @@ def main():
         elif option == "附件读取":
             # initialize search result in session state
             if "pboc_table" not in st.session_state:
-                st.session_state["pboc_table"] = None
+                st.session_state["pboc_table"] = []
             # get filelist
             filedf = get_pboctofile(org_name)
             if filedf.empty:
@@ -250,60 +344,106 @@ def main():
                 linklist = filedf["link"].tolist()
                 # get filelist
                 filelist = filedf["file"].tolist()
+
+                # choose begin and end index
+                start_index = st.number_input("开始索引", value=0, min_value=0)
+                end_index = st.number_input("结束索引", value=len(linklist), min_value=0)
+                # get link list
+                linklist = linklist[start_index:end_index]
+                # get filelist
+                filelist = filelist[start_index:end_index]
                 # display length
                 st.info(f"共{len(linklist)}条附件")
+                st.write(filelist)
                 # choose file index
-                file_idx = st.selectbox(
+                file_idx_ls = st.multiselect(
                     "附件列表", range(len(filelist)), format_func=lambda x: filelist[x]
                 )
+                if file_idx_ls == []:
+                    file_idx_ls = [x for x in range(len(filelist))]
+                # sort file index
+                file_idx_ls.sort()
+                # st.write(file_idx_ls)
                 # choose batch mode
                 batchmode = st.sidebar.checkbox("批量处理")
                 # pdf mode
                 pdfmode = st.sidebar.checkbox("PDF模式")
+                # half mode
+                halfmode = st.sidebar.checkbox("半页模式")
+
+                # set initial value of file_idx
+                file_idx = file_idx_ls[0]
                 file_name = filelist[file_idx]
                 file_link = linklist[file_idx]
+
                 # button to read excel file content
                 readexcelbutton = st.sidebar.button("读取excel文件")
                 if readexcelbutton:
                     if batchmode:
                         resls = []
-                        for file_idx in range(len(filelist)):
+                        errls = []
+                        count = 0
+                        for file_idx in file_idx_ls:
                             st.write(str(file_idx) + ": " + filelist[file_idx])
                             # check file extension
                             file_name = filelist[file_idx]
                             file_link = linklist[file_idx]
+
                             # ignore filename capitalization
                             if (
                                 file_name.lower().endswith(".xls")
                                 or file_name.lower().endswith(".xlsx")
                                 or file_name.lower().endswith(".et")
+                                or file_name.lower().endswith(".ett")
                             ):
                                 # read excel file
                                 filepath = temppath + "/" + file_name
-                                res = pd.read_excel(filepath, header=None)
-                                # display shape
-                                st.write(res.shape)
-                                st.write(res)
-                                # update link column
-                                res["link"] = file_link
-                                res["file"] = file_name
-                                resls.append(res)
-                        if len(resls) > 0:
-                            resdf = pd.concat(resls)
-                            # st.write(resdf.shape)
-                            # st.write(resdf)
-                            st.session_state["pboc_table"] = resdf
+                                # display filepath
+                                st.write(filepath)
+                                # display file link
+                                st.write(file_link)
+                                try:
+                                    res = pd.read_excel(filepath, header=None)
+                                    # display count
+                                    st.write(count)
+                                    # display shape
+                                    st.write(res.shape)
+                                    st.write(res)
+                                    if res.empty:
+                                        errls.append(file_name)
+                                    else:
+                                        # update link column
+                                        res["link"] = file_link
+                                        res["file"] = file_name
+                                        resls.append(res)
+                                        count += 1
+                                except Exception as e:
+                                    st.error(e)
+                                    st.error("读取excel文件失败")
+                                    errls.append(file_name)
+                        # if len(resls) > 0:
+                        # resdf = pd.concat(resls)
+                        # st.write(resdf.shape)
+                        # st.write(resdf)
+                        st.session_state["pboc_table"] = resls
+                        # display error list
+                        st.error("读取失败的文件：" + str(errls))
                     else:
+                        resls = []
                         # get excel file content
                         filepath = temppath + "/" + file_name
                         filecontent = pd.read_excel(filepath, header=None)
+                        # display shape
+                        st.write(filecontent.shape)
                         # display file content
                         st.write(filecontent)
                         # update link column
                         filecontent["link"] = file_link
                         filecontent["file"] = file_name
+                        resls.append(filecontent)
+
                         # update session state
-                        st.session_state["pboc_table"] = filecontent
+                        st.session_state["pboc_table"] = resls
                 # if readfilebutton:
 
                 # button to read pdf file content
@@ -311,31 +451,67 @@ def main():
                 if readpdfbutton:
                     if batchmode:
                         resls = []
-                        for file_idx in range(len(filelist)):
+                        errls = []
+                        count = 0
+                        for file_idx in file_idx_ls:
                             st.write(str(file_idx) + ": " + filelist[file_idx])
                             file_name = filelist[file_idx]
                             file_link = linklist[file_idx]
                             st.write(file_link)
-                            # get pdf file content
-                            filepath = temppath + "/" + file_name
-                            filecontent = pdf2table(filepath)
-                            # display shape
-                            st.write(filecontent.shape)
-                            # display file content
-                            st.write(filecontent)
-                            # update link column
-                            filecontent["link"] = file_link
-                            filecontent["file"] = file_name
-                            # append to resls
-                            resls.append(filecontent)
+                            if file_name.lower().endswith(".pdf"):
+                                # get pdf file content
+                                filepath = temppath + "/" + file_name
+                                try:
+                                    filecontent = pdf2table(filepath)
+                                    # display count
+                                    st.write(count)
+                                    # display shape
+                                    st.write(filecontent.shape)
+                                    # display file content
+                                    st.write(filecontent)
+                                    if filecontent.empty:
+                                        errls.append(file_name)
+                                    else:
+                                        # update link column
+                                        filecontent["link"] = file_link
+                                        filecontent["file"] = file_name
+
+                                        # append to resls
+                                        resls.append(filecontent)
+                                        count += 1
+                                except Exception as e:
+                                    st.error(e)
+                                    st.error("读取pdf文件失败")
+                                    errls.append(file_name)
+
+                            if pdfmode:
+                                filepath = get_convertfname(file_name, temppath, "pdf")
+                                st.write(filepath)
+                                filecontent = pdf2table(filepath)
+                                # display count
+                                st.write(count)
+                                # display shape
+                                st.write(filecontent.shape)
+                                # display file content
+                                st.write(filecontent)
+                                # update link column
+                                filecontent["link"] = file_link
+                                filecontent["file"] = file_name
+                                # append to resls
+                                resls.append(filecontent)
+                                count += 1
                         # concat resls
-                        if len(resls) > 0:
-                            resdf = pd.concat(resls)
-                            # st.write(resdf)
-                            # update session state
-                            st.session_state["pboc_table"] = resdf
+                        # if len(resls) > 0:
+                        # resdf = pd.concat(resls)
+                        # st.write(resdf)
+                        # update session state
+                        st.session_state["pboc_table"] = resls
+                        # display error file list
+                        st.error("以下文件读取失败")
+                        st.write(errls)
 
                     elif pdfmode:
+                        resls = []
                         # get excel file content
                         filepath = get_convertfname(file_name, temppath, "pdf")
                         st.write(filepath)
@@ -347,9 +523,11 @@ def main():
                         # update link column
                         filecontent["link"] = file_link
                         filecontent["file"] = file_name
+                        resls.append(filecontent)
                         # update session state
-                        st.session_state["pboc_table"] = filecontent
+                        st.session_state["pboc_table"] = resls
                     else:
+                        resls = []
                         # get excel file content
                         filepath = temppath + "/" + file_name
                         filecontent = pdf2table(filepath)
@@ -360,15 +538,18 @@ def main():
                         # update link column
                         filecontent["link"] = file_link
                         filecontent["file"] = file_name
+                        resls.append(filecontent)
                         # update session state
-                        st.session_state["pboc_table"] = filecontent
+                        st.session_state["pboc_table"] = resls
 
-                # button to word pdf file content
+                # button to word file content
                 readwordbutton = st.sidebar.button("读取word文件")
                 if readwordbutton:
                     if batchmode:
                         resls = []
-                        for file_idx in range(len(filelist)):
+                        errls = []
+                        count = 0
+                        for file_idx in file_idx_ls:
                             st.write(str(file_idx) + ": " + filelist[file_idx])
                             file_name = filelist[file_idx]
                             file_link = linklist[file_idx]
@@ -377,10 +558,17 @@ def main():
                                 file_name.lower().endswith(".docx")
                                 or file_name.lower().endswith(".doc")
                                 or file_name.lower().endswith(".wps")
+                                or file_name.lower().endswith(".docm")
                             ):
                                 # get pdf file content
                                 filepath = get_convertfname(file_name, temppath, "docx")
-                                filecontent = word2df(filepath)
+                                try:
+                                    filecontent = word2df(filepath)
+                                except Exception as e:
+                                    st.write(e)
+                                    filecontent = pd.DataFrame()
+                                # display count
+                                st.write(count)
                                 # display shape
                                 st.write(filecontent.shape)
                                 # display file content
@@ -388,15 +576,24 @@ def main():
                                 # update link column
                                 filecontent["link"] = file_link
                                 filecontent["file"] = file_name
-                                # append to resls
-                                resls.append(filecontent)
+                                if filecontent.shape[0] > 0:
+                                    # append to resls
+                                    resls.append(filecontent)
+                                    count += 1
+                                else:
+                                    errls.append(file_name)
                         # concat resls
-                        if len(resls) > 0:
-                            resdf = pd.concat(resls)
-                            # st.write(resdf)
-                            # update session state
-                            st.session_state["pboc_table"] = resdf
+                        # if len(resls) > 0:
+                        # resdf = pd.concat(resls)
+                        # st.write(resdf)
+                        # update session state
+                        st.session_state["pboc_table"] = resls
+
+                        if len(errls) > 0:
+                            st.write("以下文件无法读取")
+                            st.write(errls)
                     else:
+                        resls = []
                         # get excel file content
                         filepath = get_convertfname(file_name, temppath, "docx")
                         st.write(filepath)
@@ -408,8 +605,106 @@ def main():
                         # update link column
                         filecontent["link"] = file_link
                         filecontent["file"] = file_name
+                        resls.append(filecontent)
                         # update session state
-                        st.session_state["pboc_table"] = filecontent
+                        st.session_state["pboc_table"] = resls
+
+                # button to read pic file content
+                readpicbutton = st.sidebar.button("读取图片文件")
+                if readpicbutton:
+                    if batchmode:
+                        resls = []
+                        errls = []
+                        count = 0
+                        for file_idx in file_idx_ls:
+                            st.write(str(file_idx) + ": " + filelist[file_idx])
+                            file_name = filelist[file_idx]
+                            file_link = linklist[file_idx]
+                            st.write(file_link)
+                            if (
+                                file_name.lower().endswith(".png")
+                                or file_name.lower().endswith(".jpg")
+                                or file_name.lower().endswith(".jpeg")
+                                or file_name.lower().endswith(".bmp")
+                                or file_name.lower().endswith(".gif")
+                                or file_name.lower().endswith(".tif")
+                            ):
+                                if pdfmode:
+                                    # get pdf file path
+                                    pdfname = (
+                                        file_name.split("/")[-1].split(".")[0] + ".pdf"
+                                    )
+                                    filepath = temppath + "/" + pdfname
+                                    st.write(filepath)
+                                    try:
+                                        filecontent = pdf2table(filepath)
+                                    except Exception as e:
+                                        st.write(e)
+                                        filecontent = pd.DataFrame()
+                                        errls.append(file_name)
+                                else:
+                                    # get pdf file content
+                                    filepath = temppath + "/" + file_name
+                                    try:
+                                        filecontent = picurl2table(filepath)
+                                    except Exception as e:
+                                        st.write(e)
+                                        filecontent = pd.DataFrame()
+                                        errls.append(file_name)
+                                # display count
+                                st.write(count)
+                                # display shape
+                                st.write(filecontent.shape)
+                                # display file content
+                                st.write(filecontent)
+                                # update link column
+                                filecontent["link"] = file_link
+                                filecontent["file"] = file_name
+                                # append to resls
+                                resls.append(filecontent)
+                                count += 1
+                        # concat resls
+                        # if len(resls) > 0:
+                        # resdf = pd.concat(resls)
+                        # st.write(resdf)
+                        # update session state
+                        st.session_state["pboc_table"] = resls
+                        if len(errls) > 0:
+                            st.write("以下文件无法读取")
+                            st.write(errls)
+
+                    elif pdfmode:
+                        resls = []
+                        # get pdf file path
+                        pdfname = file_name.split("/")[-1].split(".")[0] + ".pdf"
+                        filepath = temppath + "/" + pdfname
+                        st.write(filepath)
+                        filecontent = pdf2table(filepath)
+                        # display shape
+                        st.write(filecontent.shape)
+                        # display file content
+                        st.write(filecontent)
+                        # update link column
+                        filecontent["link"] = file_link
+                        filecontent["file"] = file_name
+                        resls.append(filecontent)
+                        # update session state
+                        st.session_state["pboc_table"] = resls
+                    else:
+                        resls = []
+                        # get excel file content
+                        filepath = temppath + "/" + file_name
+                        filecontent = picurl2table(filepath)
+                        # display shape
+                        st.write(filecontent.shape)
+                        # display file content
+                        st.write(filecontent)
+                        # update link column
+                        filecontent["link"] = file_link
+                        filecontent["file"] = file_name
+                        resls.append(filecontent)
+                        # update session state
+                        st.session_state["pboc_table"] = resls
 
                 cols = [
                     "序号",
@@ -420,18 +715,33 @@ def main():
                     "作出行政处罚决定机关名称",
                     "作出行政处罚决定日期",
                     "备注",
+                    "link",
+                    "file",
                 ]
                 # choose save column list
-                savecols = st.multiselect("保存列", cols, default=cols)
+                savecols = st.text_area("保存列", value=cols)
 
+                # ger resls from session state
+                resls = st.session_state["pboc_table"]
+                # generate blank string list by len of resls
+                colstr = [
+                    (x, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+                    for x in range(len(resls))
+                ]
+                delstr = st.text_area("字段(序号,留存字段,字段名)", value=colstr)
+                dfupd = dfdelcol(resls, delstr, savecols, halfmode)
+                st.markdown("## 读取结果")
+                # display shape
+                st.write(dfupd.shape)
+                st.write(dfupd)
                 # button to save df
                 savebutton = st.sidebar.button("保存")
                 if savebutton:
                     # get dfupd
-                    dfupd = st.session_state["pboc_table"]
-                    st.write(dfupd)
+                    # dfupd = st.session_state["pboc_table"]
+                    # st.write(dfupd)
                     # save dfupd to pboctotable
-                    save_pboctable(dfupd, savecols, org_name)
+                    save_pboctable(dfupd, org_name)
                     st.success("保存成功")
 
                 # button for convert
@@ -440,10 +750,46 @@ def main():
                     docxconvertion(temppath)
 
                 # button for convert docx to pdf
-                converttopdf_button = st.sidebar.button("docx转pdf")
+                converttopdf_button = st.sidebar.button("文件转pdf")
                 if converttopdf_button:
-                    filepath = filepath = temppath + "/" + file_name
-                    docx2pdf(filepath, temppath)
+                    if batchmode:
+                        for file_idx in file_idx_ls:
+                            file_name = filelist[file_idx]
+                            st.write(file_name)
+                            filepath = temppath + "/" + file_name
+                            docx2pdf(filepath, temppath)
+                            st.write("转换成功" + filepath)
+                    else:
+                        filepath = temppath + "/" + file_name
+                        docx2pdf(filepath, temppath)
+
+                # button for convert image to pdf
+                convertimg2pdf_button = st.sidebar.button("图片转pdf")
+                if convertimg2pdf_button:
+                    if batchmode:
+                        for file_idx in file_idx_ls:
+                            st.write(str(file_idx) + ": " + filelist[file_idx])
+                            file_name = filelist[file_idx]
+                            file_link = linklist[file_idx]
+                            st.write(file_link)
+                            if (
+                                file_name.lower().endswith(".png")
+                                or file_name.lower().endswith(".jpg")
+                                or file_name.lower().endswith(".jpeg")
+                                or file_name.lower().endswith(".bmp")
+                                or file_name.lower().endswith(".gif")
+                                or file_name.lower().endswith(".tif")
+                            ):
+                                try:
+                                    filepath = temppath + "/" + file_name
+                                    img_to_pdf(filepath, temppath)
+                                except Exception as e:
+                                    st.write(e)
+                                    st.write("转换失败")
+
+                    else:
+                        filepath = temppath + "/" + file_name
+                        img_to_pdf(filepath, temppath)
 
         elif option == "内容处理":
 
@@ -504,6 +850,9 @@ def main():
                 # save dfupd to pboctotable
                 save_pbocdetail(dfupd, org_name)
                 st.success("保存成功")
+
+    elif choice == "案例下载":
+        download_pbocsum()
 
 
 if __name__ == "__main__":

@@ -65,7 +65,7 @@ def df2aggrid(df):
     ag_grid = AgGrid(
         df,
         theme="material",
-        #  height=800,
+        height=500,
         fit_columns_on_grid_load=True,  # fit columns to grid width
         gridOptions=gridOptions,  # grid options
         #  key='select_grid', # key is used to identify the grid

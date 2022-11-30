@@ -8,6 +8,7 @@ from pathlib import Path
 
 import cv2
 import docx
+import img2pdf
 import numpy as np
 import pandas as pd
 import pdfplumber
@@ -149,12 +150,13 @@ def docxconvertion(uploadpath):
 
     docdest = os.path.join(uploadpath, "doc")
     wpsdest = os.path.join(uploadpath, "wps")
-    # doccdest = os.path.join(basepath,'docc')
     docxdest = os.path.join(uploadpath, "docx")
+    docmdest = os.path.join(uploadpath, "docm")
 
     docfiles = find_files(uploadpath, "*.doc", True)
     wpsfiles = find_files(uploadpath, "*.wps", True)
     docxfiles = find_files(uploadpath, "*.docx", True)
+    docmfiles = find_files(uploadpath, "*.docm", True)
 
     for filepath in docfiles:
         st.info(filepath)
@@ -211,6 +213,23 @@ def docxconvertion(uploadpath):
                 filepath,
                 "--outdir",
                 docxdest,
+            ]
+        )
+
+    for filepath in docmfiles:
+        st.info(filepath)
+        # filename = os.path.basename(filepath)
+        #     print(filename)
+        #         output = subprocess.check_output(["soffice","--headless","--convert-to","docx",file,"--outdir",dest])
+        subprocess.call(
+            [
+                "soffice",
+                "--headless",
+                "--convert-to",
+                "docx",
+                filepath,
+                "--outdir",
+                docmdest,
             ]
         )
 
@@ -312,6 +331,8 @@ def extract_text(df, uploadpath):
 
 def picurl2table(url):
     image, mylistx, mylisty = seg_pic(url)
+    # display(image)
+    st.image(image)
     mylist = table_ocr(image, mylistx, mylisty)
     df = pd.DataFrame(mylist)
     return df
@@ -524,3 +545,13 @@ def docx2pdf(filepath, temppath):
             docdest,
         ]
     )
+
+
+def img_to_pdf(picpath, temppath):
+    # get pdf file name
+    pdfname = picpath.split("/")[-1].split(".")[0] + ".pdf"
+    # get pdf file path
+    pdfpath = os.path.join(temppath, pdfname)
+
+    with open(pdfpath, "wb") as f:
+        f.write(img2pdf.convert(picpath))

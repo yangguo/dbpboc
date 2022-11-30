@@ -3,18 +3,17 @@ import os
 import random
 import time
 import urllib
+from ast import literal_eval
 from urllib.parse import unquote
 
 import pandas as pd
-
-# import wget
 import pdfplumber
 import requests
 import streamlit as st
 from doc2text import pdfurl2tableocr, picurl2table
 from selenium.webdriver.common.by import By
 from snapshot import get_chrome_driver
-from utils import get_now
+from utils import df2aggrid, get_now, split_words
 
 penpboc = "../pboc"
 temppath = r"../data/temp"
@@ -61,43 +60,43 @@ org2name = {
 }
 
 org2url = {
-    "天津": "tianjin",
-    "重庆": "chongqing",
-    "上海": "shanghai",
-    "兰州": "lanzhou",
-    "拉萨": "lasa",
-    "西宁": "xining",
-    "乌鲁木齐": "wulumuqi",
-    "南宁": "nanning",
-    "贵阳": "guiyang",
-    "福州": "fuzhou",
-    "成都": "chengdu",
-    "呼和浩特": "huhehaote",
-    "郑州": "zhengzhou",
-    "北京": "beijing",
-    "合肥": "hefei",
-    "厦门": "xiamen",
-    "海口": "haikou",
-    "大连": "dalian",
+    "天津": "http://tianjin.pbc.gov.cn/fzhtianjin/113682/113700/113707/10983/index",
+    "重庆": "http://chongqing.pbc.gov.cn/chongqing/107680/107897/107909/8000/index",
+    "上海": "http://shanghai.pbc.gov.cn/fzhshanghai/113577/114832/114918/14681/index",
+    "兰州": "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/12820/index",
+    "拉萨": "http://lasa.pbc.gov.cn/lasa/120480/120504/120511/18819/index",
+    "西宁": "http://xining.pbc.gov.cn/xining/118239/118263/118270/13228/index",
+    "乌鲁木齐": "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/14752/index",
+    "南宁": "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/19833/index",
+    "贵阳": "http://guiyang.pbc.gov.cn/guiyang/113288/113306/113313/10855/index",
+    "福州": "http://fuzhou.pbc.gov.cn/fuzhou/126805/126823/126830/17179/index",
+    "成都": "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/18154/index",
+    "呼和浩特": "http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/23932/index",
+    "郑州": "http://zhengzhou.pbc.gov.cn/zhengzhou/124182/124200/124207/18390/index",
+    "北京": "http://beijing.pbc.gov.cn/beijing/132030/132052/132059/19192/index",
+    "合肥": "http://hefei.pbc.gov.cn/hefei/122364/122382/122389/14535/index",
+    "厦门": "http://xiamen.pbc.gov.cn/xiamen/127703/127721/127728/18534/index",
+    "海口": "http://haikou.pbc.gov.cn/haikou/132982/133000/133007/19966/index",
+    "大连": "http://dalian.pbc.gov.cn/dalian/123812/123830/123837/16262/index",
     "广州": "http://guangzhou.pbc.gov.cn/guangzhou/129142/129159/129166/20713/index",
-    "太原": "taiyuan",
-    "石家庄": "shijiazhuang",
-    "总部": "zongbu",
-    "昆明": "kunming",
+    "太原": "http://taiyuan.pbc.gov.cn/taiyuan/133960/133981/133988/20320/index",
+    "石家庄": "http://shijiazhuang.pbc.gov.cn/shijiazhuang/131442/131463/131472/20016/index",
+    "总部": "http://www.pbc.gov.cn/zhengwugongkai/4081330/4081344/4081407/4081705/d80f41dc/index",
+    "昆明": "http://kunming.pbc.gov.cn/kunming/133736/133760/133767/20429/index",
     "青岛": "http://qingdao.pbc.gov.cn/qingdao/126166/126184/126191/16720/index",
-    "沈阳": "shenyang",
-    "长沙": "changsha",
-    "深圳": "shenzhen",
+    "沈阳": "http://shenyang.pbc.gov.cn/shenyfh/108074/108127/108208/8267/index",
+    "长沙": "http://changsha.pbc.gov.cn/changsha/130011/130029/130036/18625/index",
+    "深圳": "http://shenzhen.pbc.gov.cn/shenzhen/122811/122833/122840/15142/index",
     "武汉": "http://wuhan.pbc.gov.cn/wuhan/123472/123493/123502/16682/index",
-    "银川": "yinchuan",
-    "西安": "xian",
-    "哈尔滨": "haerbin",
-    "长春": "changchun",
-    "宁波": "ningbo",
-    "杭州": "hangzhou",
-    "南京": "nanjing",
-    "济南": "jinan",
-    "南昌": "nanchang",
+    "银川": "http://yinchuan.pbc.gov.cn/yinchuan/119983/120001/120008/14095/index",
+    "西安": "http://xian.pbc.gov.cn/xian/129428/129449/129458/23967/index",
+    "哈尔滨": "http://haerbin.pbc.gov.cn/haerbin/112693/112776/112783/11181/index",
+    "长春": "http://changchun.pbc.gov.cn/changchun/124680/124698/124705/16071/index",
+    "宁波": "http://ningbo.pbc.gov.cn/ningbo/127076/127098/127105/17279/index",
+    "杭州": "http://hangzhou.pbc.gov.cn/hangzhou/125268/125286/125293/16349/index",
+    "南京": "http://nanjing.pbc.gov.cn/nanjing/117542/117560/117567/12561/index",
+    "济南": "http://jinan.pbc.gov.cn/jinan/120967/120985/120994/13768/index",
+    "南昌": "http://nanchang.pbc.gov.cn/nanchang/132372/132390/132397/19361/index",
 }
 
 
@@ -117,27 +116,55 @@ def get_csvdf(penfolder, beginwith):
     return df
 
 
-def searchpboc(df, title_text, location_text):
+def searchpboc(
+    df,
+    start_date,
+    end_date,
+    wenhao_text,
+    people_text,
+    event_text,
+    penalty_text,
+    org_text,
+    province,
+):
+    # st.write(df)
+    # split words
+    wenhao_text = split_words(wenhao_text)
+    people_text = split_words(people_text)
+    event_text = split_words(event_text)
+    # law_text = split_words(law_text)
+    penalty_text = split_words(penalty_text)
+    org_text = split_words(org_text)
 
     col = [
+        # "序号",
         "企业名称",
         "处罚决定书文号",
         "违法行为类型",
         "行政处罚内容",
         "作出行政处罚决定机关名称",
         "作出行政处罚决定日期",
+        "备注",
         "区域",
-        "文件",
-        # "来源",
+        "link",
+        "发布日期",
     ]
-
     searchdf = df[
-        (df["企业名称"].str.contains(title_text)) & (df["区域"].str.contains(location_text))
+        (df["发布日期"] >= start_date)
+        & (df["发布日期"] <= end_date)
+        & (df["企业名称"].str.contains(people_text))
+        & (df["处罚决定书文号"].str.contains(wenhao_text))
+        & (df["违法行为类型"].str.contains(event_text))
+        & (df["行政处罚内容"].str.contains(penalty_text))
+        & (df["作出行政处罚决定机关名称"].str.contains(org_text))
+        & (df["区域"].isin(province))
     ][col]
-
+    # sort by date desc
+    searchdf.sort_values(by=["发布日期"], ascending=False, inplace=True)
+    # drop duplicates
+    # searchdf.drop_duplicates(subset=["link"], inplace=True)
     # reset index
     searchdf.reset_index(drop=True, inplace=True)
-
     return searchdf
 
 
@@ -148,10 +175,10 @@ def display_summary():
     # get length of old eventdf
     oldlen2 = len(oldsum2)
     # display isnull sum
-    st.write(oldsum2.isnull().sum())
+    # st.write(oldsum2.isnull().sum())
     # get min and max date of old eventdf
-    min_date2 = oldsum2["作出行政处罚决定日期"].min()
-    max_date2 = oldsum2["作出行政处罚决定日期"].max()
+    min_date2 = oldsum2["发布日期"].min()
+    max_date2 = oldsum2["发布日期"].max()
     # use metric
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -160,9 +187,7 @@ def display_summary():
         st.metric("案例日期范围", f"{min_date2} - {max_date2}")
 
     # sum max,min date and size by org
-    sumdf2 = (
-        oldsum2.groupby("区域")["作出行政处罚决定日期"].agg(["max", "min", "count"]).reset_index()
-    )
+    sumdf2 = oldsum2.groupby("区域")["发布日期"].agg(["max", "min", "count"]).reset_index()
     sumdf2.columns = ["区域", "最近发文日期", "最早发文日期", "案例总数"]
     # sort by date
     sumdf2.sort_values(by=["最近发文日期"], ascending=False, inplace=True)
@@ -260,24 +285,40 @@ def get_sumeventdf(orgname, start, end):
         st.info(str(count) + " begin")
         url = baseurl + str(i) + ".html"
         st.info("url:" + url)
+        # st.write(org_name_index)
         try:
             browser.implicitly_wait(3)
             browser.get(url)
-            ls1 = browser.find_elements(By.XPATH, '//td[@class="hei12jj"]')
+            # wait for page load
+            # time.sleep(10)
             namels = []
             datels = []
-            sumls = []
-            total = len(ls1) // 3
-            for i in range(total):
-                #     print(ls1[i].text)
-                namels.append(ls1[i * 3].text)
-                datels.append(ls1[i * 3 + 1].text)
-                sumls.append(ls1[i * 3 + 2].text)
-
-            ls2 = browser.find_elements(By.XPATH, '//font[@class="hei12"]/a')
             linkls = []
-            for link in ls2:
-                linkls.append(link.get_attribute("href"))
+            sumls = []
+            if org_name_index == "zongbu":
+                st.write("zongbu")
+                ls3 = browser.find_elements(By.XPATH, "//div[2]/ul/li/a")
+                ls4 = browser.find_elements(By.XPATH, "//div[2]/ul/li/span")
+                for i in range(len(ls3)):
+                    namels.append(ls3[i].text)
+                    datels.append(ls4[i].text)
+                    linkls.append(ls3[i].get_attribute("href"))
+                    sumls.append("")
+            else:
+                ls1 = browser.find_elements(By.XPATH, '//td[@class="hei12jj"]')
+                total = len(ls1) // 3
+                for i in range(total):
+                    #     print(ls1[i].text)
+                    namels.append(ls1[i * 3].text)
+                    datels.append(ls1[i * 3 + 1].text)
+                    sumls.append(ls1[i * 3 + 2].text)
+
+                ls2 = browser.find_elements(By.XPATH, '//font[@class="hei12"]/a')
+                # linkls = []
+                for link in ls2:
+                    linkls.append(link.get_attribute("href"))
+
+            # st.write(namels)
             df = pd.DataFrame(
                 {"name": namels, "date": datels, "link": linkls, "sum": sumls}
             )
@@ -380,7 +421,8 @@ def get_eventdetail(eventsum, orgname):
     browser = get_chrome_driver(temppath)
     detaills = eventsum["link"].tolist()
 
-    resultls = []
+    dresultls = []
+    tresultls = []
     errorls = []
     count = 0
     for durl in detaills:
@@ -399,36 +441,38 @@ def get_eventdetail(eventsum, orgname):
                     st.write(dlink)
                     downurl.append(dlink)
 
-            st.write("get table")
-            # get web table
-            dl2 = browser.find_elements(By.XPATH, '//td[@class="hei14jj"]//tr')
-            df = web2table(dl2)
-            st.write(df)
-
             if len(downurl) > 0:
                 if len(downurl) == 1:
                     dfl = pd.DataFrame(index=[0])
                 else:
                     dfl = pd.DataFrame()
-                dfl["link"] = durl
                 dfl["download"] = downurl
-                filename = os.path.basename(durl)
-                # unquote to decode url
-                filename = unquote(filename)
-                dfl["file"] = filename
-                st.write(dfl)
-                resultls.append(dfl)
-
-            if len(downurl) == 0 and df.empty:
-                dfl = pd.DataFrame(index=[0])
                 dfl["link"] = durl
-                dfl["download"] = durl
-                filename = os.path.basename(durl)
-                # unquote to decode url
-                filename = unquote(filename)
-                dfl["file"] = filename
+                # filename = os.path.basename(durl)
+                # # unquote to decode url
+                # filename = unquote(filename)
+                # dfl["file"] = filename
                 st.write(dfl)
-                resultls.append(dfl)
+                dresultls.append(dfl)
+
+            st.write("get table")
+            # get web table
+            if org_name_index == "zongbu":
+                dl2 = browser.find_elements(By.XPATH, "//table/tbody/tr")
+            else:
+                dl2 = browser.find_elements(By.XPATH, '//td[@class="hei14jj"]//tr')
+            df = web2table(dl2)
+            st.write(df)
+            # if len(downurl) == 0 and df.empty:
+            #     dfl = pd.DataFrame(index=[0])
+            #     dfl["link"] = durl
+            #     dfl["download"] = durl
+            #     filename = os.path.basename(durl)
+            #     # unquote to decode url
+            #     filename = unquote(filename)
+            #     dfl["file"] = filename
+            #     st.write(dfl)
+            #     resultls.append(dfl)
 
             colen = len(df.columns)
             if colen == 8:
@@ -443,18 +487,45 @@ def get_eventdetail(eventsum, orgname):
                     "备注",
                 ]
                 df["link"] = durl
-                resultls.append(df)
-            #         elif colen==7:
-            #             df['备注']=''
-            #             df.columns=['序号', '企业名称', '处罚决定书文号', '违法行为类型', '行政处罚内容', '作出行政处罚决定机关名称','作出行政处罚决定日期', '备注']
-            #             df['link']=durl
-            #             dwnurl.append(df)
-            #         elif colen==6:
-            #             df['序号']=''
-            #             df['备注']=''
-            #             df.columns=['企业名称', '处罚决定书文号', '违法行为类型', '行政处罚内容', '作出行政处罚决定机关名称','作出行政处罚决定日期', '序号', '备注']
-            #             df['link']=durl
-            #             dwnurl.append(df)
+                st.write(df)
+                tresultls.append(df)
+            elif colen == 7:
+                df["备注"] = ""
+                df.columns = [
+                    "序号",
+                    "企业名称",
+                    "处罚决定书文号",
+                    "违法行为类型",
+                    "行政处罚内容",
+                    "作出行政处罚决定机关名称",
+                    "作出行政处罚决定日期",
+                    "备注",
+                ]
+                df["link"] = durl
+                st.write(df)
+                tresultls.append(df)
+            # elif colen==6:
+            #     df['作出行政处罚决定日期']=''
+            #     df['备注']=''
+            #     df.columns=['序号','企业名称', '处罚决定书文号', '违法行为类型', '行政处罚内容', '作出行政处罚决定机关名称','作出行政处罚决定日期', '备注']
+            #     df['link']=durl
+            #     tresultls.append(df)
+            elif colen == 6:
+                df["序号"] = ""
+                df["备注"] = ""
+                df.columns = [
+                    "企业名称",
+                    "处罚决定书文号",
+                    "违法行为类型",
+                    "行政处罚内容",
+                    "作出行政处罚决定机关名称",
+                    "作出行政处罚决定日期",
+                    "序号",
+                    "备注",
+                ]
+                df["link"] = durl
+                st.write(df)
+                tresultls.append(df)
             elif colen >= 9:
                 df1 = df.drop(df.columns[7], axis=1)
                 df2 = df1[df1.columns[:8]]
@@ -469,7 +540,8 @@ def get_eventdetail(eventsum, orgname):
                     "备注",
                 ]
                 df2["link"] = durl
-                resultls.append(df2)
+                st.write(df2)
+                tresultls.append(df2)
             elif colen > 0:
                 st.error("table error" + str(colen))
                 st.error("check" + durl)
@@ -481,6 +553,8 @@ def get_eventdetail(eventsum, orgname):
 
         mod = (count + 1) % 10
         if mod == 0 and count > 0:
+            # concat all result
+            resultls = dresultls + tresultls
             if resultls:
                 tempdf = pd.concat(resultls)
                 savename = "temptodownload-" + org_name_index + str(count + 1)
@@ -497,23 +571,27 @@ def get_eventdetail(eventsum, orgname):
         st.error("error list:")
         st.error(errorls)
     # if resultls is not empty, save it
-    if resultls:
-        pbocdf = pd.concat(resultls)
-        # get file df
-        filedf = pbocdf[pbocdf["file"].notnull() | pbocdf["download"].notnull()]
+    if dresultls:
+        pbocdf = pd.concat(dresultls)
         savecsv = "pboctodownload" + org_name_index
         # reset index
-        filedf = filedf.reset_index(drop=True)
-        savetemp(filedf, savecsv)
+        pbocdf.reset_index(drop=True, inplace=True)
+        savetemp(pbocdf, savecsv)
+    else:
+        pbocdf = pd.DataFrame()
+
+    if tresultls:
         # get table df
-        tabledf = pbocdf[pbocdf["file"].isnull() & pbocdf["download"].isnull()]
+        tabledf = pd.concat(tresultls)
         savetable = "pboctotable" + org_name_index + get_now()
         # reset index
         tabledf = tabledf.reset_index(drop=True)
         savetemp(tabledf, savetable)
     else:
-        pbocdf = pd.DataFrame()
-    return pbocdf
+        tabledf = pd.DataFrame()
+
+    alldf = pd.concat([pbocdf, tabledf])
+    return alldf
 
 
 def web2table(dl2):
@@ -557,21 +635,27 @@ def download_attachment(linkurl, downloadls, orgname):
             filename = os.path.basename(url)
             # unquote to decode url
             filename = unquote(filename)
-            # save path
-            savepath = os.path.join(temppath, filename)
-            # download file by click the link
-            browser.get(url)
 
-            ls2 = browser.find_elements(By.XPATH, "//table//table[2]//a")
+            # check if file exist
+            if os.path.exists(os.path.join(temppath, filename)):
+                st.info("file exist: " + filename)
+                # continue
+            else:
+                # save path
+                savepath = os.path.join(temppath, filename)
+                # download file by click the link
+                browser.get(url)
 
-            if len(ls2) > 0:
-                dwnlink = ls2[0].get_attribute("href")
-                if dwnlink:
-                    browser.get(dwnlink)
-                    url = dwnlink
-                    filename = os.path.basename(url)
-                    # unquote to decode url
-                    filename = unquote(filename)
+            # ls2 = browser.find_elements(By.XPATH, "//table//table[2]//a")
+
+            # if len(ls2) > 0:
+            #     dwnlink = ls2[0].get_attribute("href")
+            #     if dwnlink:
+            #         browser.get(dwnlink)
+            #         url = dwnlink
+            #         filename = os.path.basename(url)
+            #         # unquote to decode url
+            #         filename = unquote(filename)
             # response = requests.get(url, stream=True)
             # with requests.get(url, stream=True) as response:
             #     with open(savepath, 'wb') as f:
@@ -604,7 +688,7 @@ def download_attachment(linkurl, downloadls, orgname):
         # filedf = lendf[lendf["download"].isnull()]
         # tabledf = pd.concat([filedf, misdf])
         tabledf = misdf
-        savename = "pboctofile" + org_name_index + get_now()
+        savename = "pboctofile" + org_name_index
         # reset index
         tabledf.reset_index(drop=True, inplace=True)
         savetemp(tabledf, savename)
@@ -627,7 +711,7 @@ def get_pboctotable(orgname):
     beginwith = temppath + "/pboctotable" + org_name_index
     pendf = get_csvdf(penpboc, beginwith)
     # fillna
-    pendf.fillna("", inplace=True)
+    # pendf.fillna("", inplace=True)
     return pendf
 
 
@@ -644,6 +728,7 @@ def save_pbocdetail(df, orgname):
     sumdf = get_pbocsum(orgname)
     # merge with df
     dfupd = pd.merge(df, sumdf, left_on="link", right_on="link", how="left")
+    dfupd["区域"] = orgname
     savename = penpboc + "/pbocdtl" + org_name_index + get_now()
     savedf(dfupd, savename)
 
@@ -685,11 +770,13 @@ def pdf2table(pdffile):
     return alltb
 
 
-def save_pboctable(df, savecols, orgname):
+def save_pboctable(df, orgname):
     org_name_index = org2name[orgname]
     savename = "pboctotable" + org_name_index + get_now()
+    # display columns
+
     # set columns
-    df.columns = savecols + ["link", "file"]
+    # df.columns = savecols
     savetemp(df, savename)
 
 
@@ -702,3 +789,260 @@ def mergetable(df, col):
     # merge columns
     dfu = df.groupby(mergecol).agg(lambda x: "".join(x)).reset_index()
     return dfu
+
+
+def download_pbocsum():
+
+    st.markdown("#### 案例数据下载")
+
+    for orgname in org2name.keys():
+
+        st.markdown("##### " + orgname)
+        # get orgname
+        org_name_index = org2name[orgname]
+        beginwith = "pbocsum" + org_name_index
+        oldsum = get_csvdf(penpboc, beginwith)
+        lensum = len(oldsum)
+        st.write("列表数据量: " + str(lensum))
+
+        beginwith = "pbocdtl" + org_name_index
+        dtl = get_csvdf(penpboc, beginwith)
+        dtl["区域"] = orgname
+        lendtl = len(dtl)
+        st.write("详情数据量: " + str(lendtl))
+
+        # listname
+        listname = "pbocsum" + org_name_index + get_now() + ".csv"
+        # download list data
+        st.download_button(
+            "下载列表数据", data=oldsum.to_csv().encode("utf_8_sig"), file_name=listname
+        )
+        # detailname
+        detailname = "pbocdtl" + org_name_index + get_now() + ".csv"
+        # download detail data
+        st.download_button(
+            "下载详情数据", data=dtl.to_csv().encode("utf_8_sig"), file_name=detailname
+        )
+
+
+# display event detail
+def display_eventdetail(search_df):
+    # draw plotly figure
+    # display_cbircmonth(search_df)
+    # get search result from session
+    search_dfnew = st.session_state["search_result_pboc"]
+    total = len(search_dfnew)
+    # st.sidebar.metric("总数:", total)
+    st.markdown("### 搜索结果" + "(" + str(total) + "条)")
+    # display download button
+    st.download_button(
+        "下载搜索结果", data=search_dfnew.to_csv().encode("utf_8_sig"), file_name="搜索结果.csv"
+    )
+    # display columns
+    discols = ["发布日期", "处罚决定书文号", "企业名称", "区域"]
+    # get display df
+    display_df = search_dfnew[discols]
+    # set index column
+    display_df["序号"] = display_df.index
+    # change column name
+    # display_df.columns = ["link", "文号","当事人",  "发布日期", "区域"]
+
+    data = df2aggrid(display_df)
+    # display data
+    selected_rows = data["selected_rows"]
+    if selected_rows == []:
+        st.error("请先选择查看案例")
+        st.stop()
+
+    id = selected_rows[0]["序号"]
+    # select search_dfnew by id
+    selected_rows_df = search_dfnew[search_dfnew.index == id]
+    # transpose and set column name
+    selected_rows_df = selected_rows_df.astype(str).T
+
+    selected_rows_df.columns = ["内容"]
+    # display selected rows
+    st.table(selected_rows_df)
+
+    # get event detail url
+    url = selected_rows_df.loc["link", "内容"]
+    # display url
+    st.markdown("##### 案例链接")
+    st.markdown(url)
+
+
+def dfdelcol(resls, delstr, savecols, halfmode=False):
+    dells = literal_eval(delstr)
+    savecols = literal_eval(savecols)
+
+    resultls = []
+    for dels in dells:
+        (idx, cols, savels) = dels
+        df = resls[idx]
+        st.write(idx)
+        # display shape
+        st.write(df.shape)
+        st.write(df)
+        comls = df.columns.tolist()
+
+        # st.write(len(comls))
+        # st.write(len(cols))
+        if len(comls) != len(cols):
+            st.warning("字段不匹配")
+            # st.stop()
+
+        if len(comls) > 10:
+            st.warning("字段过多")
+            # st.stop()
+
+        # fix 8 columns
+        if len(comls) == 8:
+            cols = [0, 1, 2, 3, 4, 5, 6, 7]
+            savels = [1, 2, 3, 4, 5, 6, 8, 9]
+
+        # fix 9 columns 删除备注
+        if len(comls) == 9:
+            cols = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+            savels = [0, 1, 2, 3, 4, 5, 6, 8, 9]
+
+        # fix 9 columns 删除序号
+        # if len(comls)==9:
+        #     cols=[0, 1, 2, 3, 4, 5, 6, 7, 8]
+        #     savels=[1, 2, 3, 4, 5, 6,7, 8, 9]
+
+        # fix 19 columns
+        # if len(comls)==19:
+        #     cols=[0, 7,8,12,15,16,18,19,20]
+        #     savels=[ 1, 2, 3, 4, 6, 5, 7,8,9]
+        #     # merge columns 2,3,4 into 2
+        #     df.iloc[:, 2] = df.iloc[:, 2]+" " + df.iloc[:, 3]+" 处罚依据:" + df.iloc[:, 4]
+        #     # merge columns 6,7 into 6
+        #     df.iloc[:, 6] = df.iloc[:, 6]+" 罚款" + df.astype(str).iloc[:, 7]
+
+        # fix 20 columns
+        # if len(comls)==20:
+        #     cols=[0, 1,2,6,10,13,17,18,19]
+        #     savels=[ 1, 2, 3, 4, 6, 5, 7,8,9]
+        #     # merge columns 2,3,4 into 2
+        #     df.iloc[:, 2] = df.iloc[:, 2]+" " + df.iloc[:, 3]+" 处罚依据:" + df.iloc[:, 4]
+        #     # merge columns 6,7 into 6
+        #     df.iloc[:, 6] = df.iloc[:, 6]+" 罚款" + df.astype(str).iloc[:, 7]
+        if len(comls) == 20:
+            cols = [0, 6, 10, 11, 14, 15, 17, 18, 19]
+            savels = [1, 2, 4, 3, 6, 5, 7, 8, 9]
+            # merge columns 2,3,4 into 2
+            # df.iloc[:, 2] = df.iloc[:, 2]+" " + df.iloc[:, 3]+" 处罚依据:" + df.iloc[:, 4]
+            # merge columns 6,7 into 6
+            # df.iloc[:, 6] = df.iloc[:, 6]+" 罚款" + df.astype(str).iloc[:, 7]
+
+        # fix 21 columns
+        if len(comls) == 21:
+            cols = [0, 7, 8, 12, 15, 16, 18, 19, 20]
+            savels = [1, 2, 4, 3, 6, 5, 7, 8, 9]
+            # merge columns 12,13 into 12
+            df.iloc[:, 12] = df.iloc[:, 12] + " 处罚依据:" + df.iloc[:, 13]
+            # merge columns 8,11 into 8
+            df.iloc[:, 8] = df.iloc[:, 8] + " 罚款" + df.astype(str).iloc[:, 11]
+        # if len(comls)==21:
+        #     cols=[0,  7,12,14, 15,16,18,19,20]
+        #     savels=[ 1, 2, 3, 4, 6, 5, 7,8,9]
+        #     # merge columns 12,13 into 12
+        #     df.iloc[:, 12] = df.iloc[:, 12]+" 处罚依据:" + df.iloc[:, 13]
+        # # merge columns 8,11 into 8
+        # df.iloc[:, 8] = df.iloc[:, 8]+" 罚款" + df.astype(str).iloc[:, 11]
+
+        # fix 22 columns
+        if len(comls) == 22:
+            cols = [0, 3, 4, 8, 12, 15, 19, 20, 21]
+            savels = [1, 2, 3, 4, 6, 5, 7, 8, 9]
+            # merge columns 4,5,6 into 4
+            df.iloc[:, 4] = (
+                df.iloc[:, 4] + " " + df.iloc[:, 5] + " 处罚依据:" + df.iloc[:, 6]
+            )
+
+        # fix 23 columns
+        # if len(comls)==23:
+        #     cols=[0,  4, 5, 9, 13, 16, 20, 21, 22]
+        #     savels=[ 1, 2, 3, 4, 6, 5, 7, 8, 9]
+        #     # merge columns 5,6,7 into 5
+        #     df.iloc[:, 5] = df.iloc[:, 5]+" " + df.iloc[:, 6]+" 处罚依据:" + df.iloc[:, 7]
+
+        if len(comls) == 23:
+            cols = [0, 7, 8, 12, 15, 16, 19, 21, 22]
+            savels = [1, 2, 4, 3, 6, 5, 7, 8, 9]
+            # merge columns 12,13 into 12
+            df.iloc[:, 12] = df.iloc[:, 12] + " 处罚依据:" + df.iloc[:, 13]
+            # merge columns 8,11 into 8
+            df.iloc[:, 8] = df.iloc[:, 8] + " 罚款" + df.astype(str).iloc[:, 11]
+
+        # fix 25 columns
+        if len(comls) == 25:
+            cols = [0, 6, 7, 11, 15, 18, 22, 23, 24]
+            savels = [1, 2, 3, 4, 6, 5, 7, 8, 9]
+            # merge columns 7,8,9 into 7
+            df.iloc[:, 7] = (
+                df.iloc[:, 7] + " " + df.iloc[:, 8] + " 处罚依据:" + df.iloc[:, 9]
+            )
+            # merge columns 11,12 into 11
+            df.iloc[:, 11] = df.iloc[:, 11] + " 罚款" + df.iloc[:, 12]
+
+        # fix 26 columns
+        if len(comls) == 26:
+            cols = [0, 7, 8, 12, 16, 19, 23, 24, 25]
+            savels = [1, 2, 3, 4, 6, 5, 7, 8, 9]
+            # merge columns 8,9,10 into 8
+            df.iloc[:, 8] = (
+                df.iloc[:, 8] + " " + df.iloc[:, 9] + " 处罚依据:" + df.iloc[:, 10]
+            )
+
+        # fix 28 columns
+        if len(comls) == 28:
+            cols = [0, 9, 10, 14, 18, 21, 25, 26, 27]
+            savels = [1, 2, 3, 4, 6, 5, 7, 8, 9]
+            # merge columns 10,11,12 into 10
+            df.iloc[:, 10] = (
+                df.iloc[:, 10] + " " + df.iloc[:, 11] + " 处罚依据:" + df.iloc[:, 12]
+            )
+
+        # fix 29 columns
+        if len(comls) == 29:
+            cols = [0, 1, 10, 11, 15, 19, 22, 26, 27, 28]
+            savels = [0, 1, 2, 3, 4, 6, 5, 7, 8, 9]
+            # merge columns 11,12,13 into 11
+            df.iloc[:, 11] = (
+                df.iloc[:, 11] + " " + df.iloc[:, 12] + " 处罚依据:" + df.iloc[:, 13]
+            )
+
+        if halfmode:
+            # get rows number
+            rows = df.shape[0]
+            # get upper half of rows number
+            rows = int(rows / 2)
+            # get upper half of rows number
+            df = df.iloc[:rows, cols]
+
+        newcol = []
+        if len(comls) < len(cols):
+            st.error("列数不一致")
+            continue
+        else:
+            for x in cols:
+                newcol.append(comls[x])
+        # get df by column range
+        dfnew = df[newcol]
+
+        newsave = []
+        for y in savels:
+            newsave.append(savecols[y])
+
+        # set column name
+        dfnew.columns = newsave
+        st.write(dfnew)
+        resultls.append(dfnew)
+    if resultls:
+        resdf = pd.concat(resultls)
+        # reset index
+        resdf.reset_index(drop=True, inplace=True)
+    else:
+        resdf = pd.DataFrame()
+    return resdf
