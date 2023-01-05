@@ -804,12 +804,20 @@ def download_pbocsum():
         oldsum = get_csvdf(penpboc, beginwith)
         lensum = len(oldsum)
         st.write("列表数据量: " + str(lensum))
+        # get min and max date
+        mindate = oldsum["date"].min()
+        maxdate = oldsum["date"].max()
+        st.write("列表日期: " + maxdate + " - " + mindate)
 
         beginwith = "pbocdtl" + org_name_index
         dtl = get_csvdf(penpboc, beginwith)
         dtl["区域"] = orgname
         lendtl = len(dtl)
         st.write("详情数据量: " + str(lendtl))
+        # get min and max date
+        mindate = dtl["date"].min()
+        maxdate = dtl["date"].max()
+        st.write("详情日期: " + maxdate + " - " + mindate)
 
         # listname
         listname = "pbocsum" + org_name_index + get_now() + ".csv"
@@ -901,9 +909,9 @@ def dfdelcol(resls, delstr, savecols, halfmode=False):
             savels = [1, 2, 3, 4, 5, 6, 8, 9]
 
         # fix 9 columns 删除备注
-        if len(comls) == 9:
-            cols = [0, 1, 2, 3, 4, 5, 6, 7, 8]
-            savels = [0, 1, 2, 3, 4, 5, 6, 8, 9]
+        # if len(comls) == 9:
+        #     cols = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+        #     savels = [0, 1, 2, 3, 4, 5, 6, 8, 9]
 
         # fix 9 columns 删除序号
         # if len(comls)==9:

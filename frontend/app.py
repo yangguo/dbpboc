@@ -113,7 +113,9 @@ def main():
         display_pbocsum()
 
         # choose orgname index
-        org_name = st.sidebar.selectbox("机构", cityls)
+        org_name_ls = st.sidebar.multiselect("机构", cityls)
+        if org_name_ls==[]:
+            org_name_ls = cityls
         # choose page start number and end number
         start_num = st.sidebar.number_input("起始页", value=1, min_value=1)
         # convert to int
@@ -125,43 +127,46 @@ def main():
         sumeventbutton = st.sidebar.button("更新列表")
 
         if sumeventbutton:
-            # get sumeventdf
-            sumeventdf = get_sumeventdf(org_name, start_num, end_num)
-            # get length of sumeventdf
-            length = len(sumeventdf)
-            # display length
-            st.success(f"获取了{length}条案例")
-            # update sumeventdf
-            newsum = update_sumeventdf(sumeventdf, org_name)
-            # get length of newsum
-            sumevent_len = len(newsum)
-            # display sumeventdf
-            st.success(f"共{sumevent_len}条案例待更新")
+            for org_name in org_name_ls:
+                # write org_name
+                st.markdown("#### 更新列表：" + org_name)                
+                # get sumeventdf
+                sumeventdf = get_sumeventdf(org_name, start_num, end_num)
+                # get length of sumeventdf
+                length = len(sumeventdf)
+                # display length
+                st.success(f"获取了{length}条案例")
+                # update sumeventdf
+                newsum = update_sumeventdf(sumeventdf, org_name)
+                # get length of newsum
+                sumevent_len = len(newsum)
+                # display sumeventdf
+                st.success(f"共{sumevent_len}条案例待更新")
 
         # update detail button
         eventdetailbutton = st.sidebar.button("更新详情")
         if eventdetailbutton:
-            # for org_name in org_namels:
-            # write org_name
-            st.markdown("#### 更新详情：" + org_name)
-            # update sumeventdf
-            newsum = update_toupd(org_name)
-            # get length of toupd
-            newsum_len = len(newsum)
-            # display sumeventdf
-            st.success(f"共{newsum_len}条案例待更新")
-            if newsum_len > 0:
-                # get toupdate list
-                toupd = get_pboctoupd(org_name)
-                st.write(toupd)
-                # get event detail
-                eventdetail = get_eventdetail(toupd, org_name)
-                # get length of eventdetail
-                eventdetail_len = len(eventdetail)
-                # display eventdetail
-                st.success(f"更新完成，共{eventdetail_len}条案例详情")
-            else:
-                st.error("没有更新的案例")
+            for org_name in org_name_ls:
+                # write org_name
+                st.markdown("#### 更新详情：" + org_name)
+                # update sumeventdf
+                newsum = update_toupd(org_name)
+                # get length of toupd
+                newsum_len = len(newsum)
+                # display sumeventdf
+                st.success(f"共{newsum_len}条案例待更新")
+                if newsum_len > 0:
+                    # get toupdate list
+                    toupd = get_pboctoupd(org_name)
+                    st.write(toupd)
+                    # get event detail
+                    eventdetail = get_eventdetail(toupd, org_name)
+                    # get length of eventdetail
+                    eventdetail_len = len(eventdetail)
+                    # display eventdetail
+                    st.success(f"更新完成，共{eventdetail_len}条案例详情")
+                else:
+                    st.error("没有更新的案例")
 
         # button to refresh page
         refreshbutton = st.sidebar.button("刷新页面")
