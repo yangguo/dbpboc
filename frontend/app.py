@@ -1,3 +1,5 @@
+import csv
+
 import pandas as pd
 import requests
 import streamlit as st
@@ -27,8 +29,10 @@ from dbpboc import (
     save_pbocdetail,
     save_pboctable,
     searchpboc,
+    toupt_pbocsum,
     update_sumeventdf,
     update_toupd,
+    uplink_pbocsum,
 )
 from doc2text import (
     convert_uploadfiles,
@@ -96,8 +100,9 @@ def main():
         "案例搜索",
         "案例更新",
         "附件处理",
-        "案例分类",
+        # "案例分类",
         "案例下载",
+        "案例上线",
     ]
 
     choice = st.sidebar.selectbox("选择", menu)
@@ -110,12 +115,24 @@ def main():
     elif choice == "案例更新":
         st.subheader("案例更新")
 
-        display_pbocsum()
-
         # choose orgname index
         org_name_ls = st.sidebar.multiselect("机构", cityls)
-        if org_name_ls==[]:
+        if org_name_ls == []:
             org_name_ls = cityls
+
+        # checkbox to filter pending org_name_list
+        pendingorg = st.sidebar.checkbox("待更新机构")
+        if pendingorg:
+            # get pending org_name list
+            org_name_ls = toupt_pbocsum(org_name_ls)
+            # display pending org_name list
+            st.markdown("#### 待更新机构")
+            # convert list to string
+            orglsstr = ",".join(org_name_ls)
+            st.markdown(" #### " + orglsstr)
+
+        display_pbocsum(org_name_ls)
+
         # choose page start number and end number
         start_num = st.sidebar.number_input("起始页", value=1, min_value=1)
         # convert to int
@@ -129,7 +146,7 @@ def main():
         if sumeventbutton:
             for org_name in org_name_ls:
                 # write org_name
-                st.markdown("#### 更新列表：" + org_name)                
+                st.markdown("#### 更新列表：" + org_name)
                 # get sumeventdf
                 sumeventdf = get_sumeventdf(org_name, start_num, end_num)
                 # get length of sumeventdf
@@ -370,7 +387,7 @@ def main():
                 file_idx_ls.sort()
                 # st.write(file_idx_ls)
                 # choose batch mode
-                batchmode = st.sidebar.checkbox("批量处理")
+                batchmode = st.sidebar.checkbox("批量处理", value=True)
                 # pdf mode
                 pdfmode = st.sidebar.checkbox("PDF模式")
                 # half mode
@@ -744,7 +761,6 @@ def main():
                 if savebutton:
                     # get dfupd
                     # dfupd = st.session_state["pboc_table"]
-                    # st.write(dfupd)
                     # save dfupd to pboctotable
                     save_pboctable(dfupd, org_name)
                     st.success("保存成功")
@@ -812,11 +828,21 @@ def main():
             else:
                 df = st.session_state["pboc_updf"]
 
+            st.markdown("## 更新表格")
+            dfupd = st.data_editor(df)
+            # button to update column value
+            updatebutton = st.sidebar.button("更新表格")
+            if updatebutton:
+                # update session state
+                st.session_state["pboc_updf"] = dfupd
+
+            st.markdown("### 更新后")
+            df = st.session_state["pboc_updf"]
             st.write(df)
             # get column list
             columnls = df.columns.tolist()
             # choose column index
-            column = st.sidebar.selectbox("选择列", columnls)
+            column = st.sidebar.selectbox("选择删除列", columnls)
             # get column value list
             columnvallist = df[column].unique().tolist()
             # choose column value index
@@ -858,6 +884,9 @@ def main():
 
     elif choice == "案例下载":
         download_pbocsum()
+
+    elif choice == "案例上线":
+        uplink_pbocsum()
 
 
 if __name__ == "__main__":

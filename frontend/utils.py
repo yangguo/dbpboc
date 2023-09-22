@@ -20,7 +20,7 @@ rulefolder = "../data/rules"
 backendurl = "http://localhost:8000"
 
 
-@st.cache
+# @st.cache
 def get_csvdf(rulefolder):
     files2 = glob.glob(rulefolder + "**/*.csv", recursive=True)
     dflist = []

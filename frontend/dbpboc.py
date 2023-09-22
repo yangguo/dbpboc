@@ -1,6 +1,8 @@
+import csv
 import glob
 import os
 import random
+import re
 import time
 import urllib
 from ast import literal_eval
@@ -10,6 +12,7 @@ import pandas as pd
 import pdfplumber
 import requests
 import streamlit as st
+from database import delete_data, get_collection, get_data, get_size, insert_data
 from doc2text import pdfurl2tableocr, picurl2table
 from selenium.webdriver.common.by import By
 from snapshot import get_chrome_driver
@@ -105,7 +108,7 @@ def get_csvdf(penfolder, beginwith):
     dflist = []
     # filelist = []
     for filepath in files2:
-        pendf = pd.read_csv(filepath)
+        pendf = pd.read_csv(filepath, index_col=0)
         dflist.append(pendf)
         # filelist.append(filename)
     if len(dflist) > 0:
@@ -258,8 +261,8 @@ def display_suminfo(df):
         col3.write(f"日期范围：{min_date} - {max_date}")
 
 
-def display_pbocsum():
-    for org_name in org2name.keys():
+def display_pbocsum(org_name_ls):
+    for org_name in org_name_ls:
         st.markdown("#### " + org_name)
         st.markdown("列表")
         oldsum = get_pbocsum(org_name)
@@ -610,7 +613,7 @@ def web2table(dl2):
 def savetemp(df, basename):
     savename = basename + ".csv"
     savepath = os.path.join(temppath, savename)
-    df.to_csv(savepath)
+    df.to_csv(savepath, quoting=csv.QUOTE_NONNUMERIC, escapechar="\\")
 
 
 # download attachment
@@ -795,6 +798,12 @@ def download_pbocsum():
 
     st.markdown("#### 案例数据下载")
 
+    # download by org
+    st.markdown("##### 按区域下载")
+
+    sumlist = []
+    dtllist = []
+
     for orgname in org2name.keys():
 
         st.markdown("##### " + orgname)
@@ -802,6 +811,7 @@ def download_pbocsum():
         org_name_index = org2name[orgname]
         beginwith = "pbocsum" + org_name_index
         oldsum = get_csvdf(penpboc, beginwith)
+        oldsum["区域"] = orgname
         lensum = len(oldsum)
         st.write("列表数据量: " + str(lensum))
         # get min and max date
@@ -831,6 +841,43 @@ def download_pbocsum():
         st.download_button(
             "下载详情数据", data=dtl.to_csv().encode("utf_8_sig"), file_name=detailname
         )
+        sumlist.append(oldsum)
+        dtllist.append(dtl)
+
+    # download all data
+    st.markdown("##### 全部数据")
+
+    # get all sum
+    allsum = pd.concat(sumlist)
+    # get all detail
+    alldtl = pd.concat(dtllist)
+
+    lensum = len(allsum)
+    st.write("列表数据量: " + str(lensum))
+    # get min and max date
+    mindate = allsum["date"].min()
+    maxdate = allsum["date"].max()
+    st.write("列表日期: " + maxdate + " - " + mindate)
+
+    lendtl = len(alldtl)
+    st.write("详情数据量: " + str(lendtl))
+    # get min and max date
+    mindate = alldtl["date"].min()
+    maxdate = alldtl["date"].max()
+    st.write("详情日期: " + maxdate + " - " + mindate)
+
+    # listname
+    listname = "pbocsumall" + get_now() + ".csv"
+    # download list data
+    st.download_button(
+        "下载列表数据", data=allsum.to_csv().encode("utf_8_sig"), file_name=listname
+    )
+    # detailname
+    detailname = "pbocdtlall" + get_now() + ".csv"
+    # download detail data
+    st.download_button(
+        "下载详情数据", data=alldtl.to_csv().encode("utf_8_sig"), file_name=detailname
+    )
 
 
 # display event detail
@@ -850,8 +897,9 @@ def display_eventdetail(search_df):
     discols = ["发布日期", "处罚决定书文号", "企业名称", "区域"]
     # get display df
     display_df = search_dfnew[discols]
-    # set index column
-    display_df["序号"] = display_df.index
+    # set index column using loc
+    # display_df["序号"] = display_df.index
+    display_df.loc[:, "序号"] = display_df.index
     # change column name
     # display_df.columns = ["link", "文号","当事人",  "发布日期", "区域"]
 
@@ -1054,3 +1102,120 @@ def dfdelcol(resls, delstr, savecols, halfmode=False):
     else:
         resdf = pd.DataFrame()
     return resdf
+
+
+def uplink_pbocsum():
+
+    st.markdown("#### 案例数据上线")
+
+    beginwith = "pbocsum"
+    oldsum = get_csvdf(penpboc, beginwith)
+    lensum = len(oldsum)
+    st.write("列表数据量: " + str(lensum))
+    # get min and max date
+    mindate = oldsum["date"].min()
+    maxdate = oldsum["date"].max()
+    st.write("列表日期: " + maxdate + " - " + mindate)
+
+    beginwith = "pbocdtl"
+    dtl = get_csvdf(penpboc, beginwith)
+    # dtl["区域"] = orgname
+    lendtl = len(dtl)
+    st.write("详情数据量: " + str(lendtl))
+    # get min and max date
+    mindate = dtl["date"].min()
+    maxdate = dtl["date"].max()
+    st.write("详情日期: " + maxdate + " - " + mindate)
+
+    # listname
+    listname = "pbocsum" + get_now() + ".csv"
+    # download list data
+    # st.download_button(
+    #     "下载列表数据", data=oldsum.to_csv().encode("utf_8_sig"), file_name=listname
+    # )
+
+    # st.code(dtl.columns.tolist())
+
+    col = [
+        # "序号",
+        "企业名称",
+        "处罚决定书文号",
+        "违法行为类型",
+        "行政处罚内容",
+        "作出行政处罚决定机关名称",
+        "作出行政处罚决定日期",
+        "备注",
+        "区域",
+        "link",
+        "name",
+        "date",
+    ]
+    # st.write(dtl.isnull().sum())
+    dtllink = dtl[col]
+
+    # dtllink['处罚决定书文号'] = dtllink['处罚决定书文号'].astype(str)
+    # convert 处罚决定书文号 to str using loc
+    dtllink.loc[:, "处罚决定书文号"] = dtllink["处罚决定书文号"].astype(str)
+
+    # st.write(dtllink)
+
+    # remove space
+    dtllink = dtllink.applymap(
+        lambda x: re.sub(r"\s+", "", x) if isinstance(x, str) else x
+    )
+
+    # detailname
+    detailname = "pbocdtl" + get_now() + ".csv"
+    # download detail data
+    # st.download_button(
+    #     "下载详情数据", data=dtllink.to_csv().encode("utf_8_sig"), file_name=detailname
+    # )
+    # convert date to datetime
+    dtllink["发布日期"] = pd.to_datetime(dtllink["date"])
+
+    collection = get_collection("penpboc", "pbocdtl")
+
+    # display collection size
+    collection_size = get_size(collection)
+    st.write("上线数据量: " + str(collection_size))
+
+    # get data from mongodb
+    olddf = get_data(collection)
+
+    # download mongodb collection data
+    st.download_button(
+        "下载上线数据", data=olddf.to_csv().encode("utf_8_sig"), file_name="上线案例数据.csv"
+    )
+
+    # delete data from the MongoDB collection
+    if st.button("删除上线数据"):
+        delete_data(collection)
+        st.success("上线案例数据删除成功！")
+
+    # get update data based on link
+    updf = dtllink[~dtllink["link"].isin(olddf["link"])]
+    # display update data
+    st.write("待更新上线数据量: " + str(len(updf)))
+    st.write(updf)
+
+    # download update data
+    st.download_button(
+        "下载待更新数据", data=updf.to_csv().encode("utf_8_sig"), file_name="待更新数据.csv"
+    )
+
+    # Insert data into the MongoDB collection
+    if st.button("更新上线数据"):
+        insert_data(updf, collection)
+        st.success("案例数据上线成功！")
+
+
+def toupt_pbocsum(org_name_ls):
+    touptls = []
+    for org_name in org_name_ls:
+        oldsum = get_pbocsum(org_name)
+        maxsumdate = oldsum["发布日期"].max()
+        dtl = get_pbocdetail(org_name)
+        maxdtldate = dtl["发布日期"].max()
+        if maxdtldate < maxsumdate:
+            touptls.append(org_name)
+    return touptls

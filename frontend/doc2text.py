@@ -12,9 +12,11 @@ import img2pdf
 import numpy as np
 import pandas as pd
 import pdfplumber
+import pytesseract
 import streamlit as st
 from docx.api import Document
-from paddleocr import PaddleOCR
+
+# from paddleocr import PaddleOCR
 from pdf2image import convert_from_path
 from PIL import Image
 
@@ -22,7 +24,7 @@ Image.MAX_IMAGE_PIXELS = None
 
 # uploadpath = "uploads/"
 
-ocr = PaddleOCR(use_angle_cls=True, lang="ch")
+# ocr = PaddleOCR(use_angle_cls=True, lang="ch")
 
 
 def docxurl2txt(url):
@@ -56,13 +58,18 @@ def pdfurl2txt(url):
     return result
 
 
-def paddleocr2text(image_file):
-    result = ocr.ocr(image_file, cls=True)
-    # print(result)
-    txtls = [line[1][0] for line in result]
-    #     print(txtls)
-    txt = "\n".join(txtls)
-    return txt
+# def paddleocr2text(image_file):
+#     result = ocr.ocr(image_file, cls=True)
+#     # print(result)
+#     txtls = [line[1][0] for line in result]
+#     #     print(txtls)
+#     txt = "\n".join(txtls)
+#     return txt
+
+
+def pytesseract2text(image_file):
+    text = pytesseract.image_to_string(image_file, lang="chi_sim")
+    return text
 
 
 def pdfurl2ocr(url, uploadpath):
@@ -85,7 +92,8 @@ def pdfurl2ocr(url, uploadpath):
 
     # Iterate from 1 to total number of pages
     for image_file in image_file_list:
-        text += paddleocr2text(image_file)
+        # text += paddleocr2text(image_file)
+        text += pytesseract2text(image_file)
         # delete image file
         os.remove(image_file)
 
@@ -116,7 +124,8 @@ def docxurl2ocr(url, uploadpath):
 
     # Iterate from 1 to total number of pages
     for image_file in image_file_list:
-        text += paddleocr2text(image_file)
+        # text += paddleocr2text(image_file)
+        text += pytesseract2text(image_file)
         # delete image file
         os.remove(image_file)
 
@@ -125,7 +134,8 @@ def docxurl2ocr(url, uploadpath):
 
 def picurl2ocr(url):
     text = ""
-    text += paddleocr2text(url)
+    # text += paddleocr2text(url)
+    text += pytesseract2text(url)
     return text
 
 
@@ -351,18 +361,20 @@ def table_ocr(image, mylistx, mylisty):
             ]  # 减去3的原因是由于我缩小ROI范围
             # cv2.imshow("分割后子图片展示：", ROI)
             # cv2.waitKey(0)
-            result = ocr.ocr(ROI, det=True)
-            text_len = len(result)
-            tmptxt = " "
-            txt = " "
-            if text_len != 0:
-                text = ""
-                for idx in range(len(result)):
-                    res = result[idx]
-                    for line in res:
-                        tmptxt, _ = line[-1]
-                        txt = txt + "\n" + tmptxt
-                    text += txt
+            # result = ocr.ocr(ROI, det=True)
+            # text = paddleocr2text(ROI)
+            text = pytesseract2text(ROI)
+            # text_len = len(result)
+            # tmptxt = " "
+            # txt = " "
+            # if text_len != 0:
+            #     text = ""
+            #     for idx in range(len(result)):
+            #         res = result[idx]
+            #         for line in res:
+            #             tmptxt, _ = line[-1]
+            #             txt = txt + "\n" + tmptxt
+            #         text += txt
             row.append(text)
             j = j + 1
         i = i + 1
@@ -380,11 +392,21 @@ def seg_pic(img):
     binary = cv2.adaptiveThreshold(
         ~gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 35, -5
     )
+    # Calculate binary threshold using Otsu's method
+    # _, binary = cv2.threshold(~gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
     # ret,binary = cv2.threshold(~gray, 127, 255, cv2.THRESH_BINARY)
     # cv2.imshow("二值化图片：", binary)  # 展示图片
     # cv2.waitKey(0)
 
     rows, cols = binary.shape
+
+    # 识别横线
+    kernel_width = cols // 20
+    kernel_height = rows // 20
+    # 用于扩充或者腐蚀图像
+    # kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_width, kernel_height))
+
     scale = 40
     # 识别横线
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (cols // scale, 1))

@@ -80,7 +80,8 @@ def get_chrome_driver(folder):
 
     options.add_experimental_option("prefs", prefs)
 
-    service = ChromeService(executable_path=ChromeDriverManager().install())
+    # service = ChromeService(executable_path=ChromeDriverManager(version="117.0.5939").install())
+    service = ChromeService()
     # return webdriver.Chrome(options=options)
     driver = webdriver.Chrome(service=service, options=options)
 
