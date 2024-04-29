@@ -1,7 +1,12 @@
 import pandas as pd
 import pymongo
 import streamlit as st
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
+
+mongo_connection_string = os.getenv("MONGO_CONNECTION_STRING")
 
 # Connect to the MongoDB Docker container
 @st.cache_resource
@@ -12,7 +17,9 @@ def get_mongo_client():
 @st.cache_resource
 def get_mongo_remote():
     client = pymongo.MongoClient(
-        "***REMOVED***"
+        mongo_connection_string,
+        tlsAllowInvalidCertificates=True,
+        tlsAllowInvalidHostnames=True,
     )
     # db = client.test
     # Send a ping to confirm a successful connection
