@@ -1,14 +1,8 @@
-import csv
-
 import pandas as pd
-import requests
 import streamlit as st
 
 # from docx2pdf import convert
 
-temppath = "../data/temp"
-# backendurl = "http://backend.docker:8000"
-# backendurl = "http://localhost:8000"
 
 from dbpboc import (
     dfdelcol,
@@ -33,9 +27,9 @@ from dbpboc import (
     update_sumeventdf,
     update_toupd,
     uplink_pbocsum,
+    get_orgname_index,
 )
 from doc2text import (
-    convert_uploadfiles,
     docx2pdf,
     docxconvertion,
     get_convertfname,
@@ -43,6 +37,10 @@ from doc2text import (
     picurl2table,
     word2df,
 )
+
+temppath = "../temp"
+# backendurl = "http://backend.docker:8000"
+# backendurl = "http://localhost:8000"
 
 # set page config
 st.set_page_config(
@@ -94,7 +92,6 @@ cityls = [
 
 
 def main():
-
     menu = [
         "案例总数",
         "案例搜索",
@@ -120,6 +117,9 @@ def main():
         if org_name_ls == []:
             org_name_ls = cityls
 
+        # set org_name_ls to session state
+        st.session_state["org_name_ls"] = org_name_ls
+
         # checkbox to filter pending org_name_list
         pendingorg = st.sidebar.checkbox("待更新机构")
         if pendingorg:
@@ -130,7 +130,7 @@ def main():
             # convert list to string
             orglsstr = ",".join(org_name_ls)
             st.markdown(" #### " + orglsstr)
-
+        # st.write(org_name_ls)
         display_pbocsum(org_name_ls)
 
         # choose page start number and end number
@@ -147,18 +147,30 @@ def main():
             for org_name in org_name_ls:
                 # write org_name
                 st.markdown("#### 更新列表：" + org_name)
-                # get sumeventdf
-                sumeventdf = get_sumeventdf(org_name, start_num, end_num)
-                # get length of sumeventdf
-                length = len(sumeventdf)
-                # display length
-                st.success(f"获取了{length}条案例")
-                # update sumeventdf
-                newsum = update_sumeventdf(sumeventdf, org_name)
-                # get length of newsum
-                sumevent_len = len(newsum)
-                # display sumeventdf
-                st.success(f"共{sumevent_len}条案例待更新")
+
+                start = start_num
+                end = end_num
+
+                while True:
+                    # get sumeventdf
+                    sumeventdf = get_sumeventdf(org_name, start, end)
+                    # get length of sumeventdf
+                    length = len(sumeventdf)
+                    # display length
+                    st.success(f"获取了{length}条案例")
+                    # update sumeventdf
+                    newsum = update_sumeventdf(sumeventdf, org_name)
+                    # get length of newsum
+                    sumevent_len = len(newsum)
+                    # display sumeventdf
+                    st.success(f"共{sumevent_len}条案例待更新")
+
+                    if sumevent_len == length and length > 0:
+                        start = end + 1
+                        end = end + 1
+                        continue
+                    else:
+                        break
 
         # update detail button
         eventdetailbutton = st.sidebar.button("更新详情")
@@ -199,10 +211,12 @@ def main():
             st.session_state["keywords_pboc"] = []
 
         resls = []
-        for org_name in cityls:
-            df = get_pbocdetail(org_name)
-            resls.append(df)
-        dfl = pd.concat(resls)
+        # for org_name in cityls:
+        #     df = get_pbocdetail(org_name)
+        #     resls.append(df)
+        # dfl = pd.concat(resls)
+        dfl = get_pbocdetail("")
+        # st.write(dfl)
         # get min and max date of old eventdf
         min_date = dfl["发布日期"].min()
         max_date = dfl["发布日期"].max()
@@ -289,8 +303,14 @@ def main():
 
     elif choice == "附件处理":
         st.subheader("附件处理")
+
+        # get org_name list from session state
+        org_name_ls = st.session_state["org_name_ls"]
         # choose orgname index
-        org_name = st.sidebar.selectbox("机构", cityls)
+        org_name = st.sidebar.selectbox("机构", org_name_ls)
+        # org_name = st.sidebar.selectbox("机构", cityls)
+
+        org_name_index = get_orgname_index(org_name)
 
         # radio button to choose option one or two
         option = st.sidebar.radio("选择", ("附件下载", "附件读取", "内容处理"))
@@ -369,7 +389,9 @@ def main():
 
                 # choose begin and end index
                 start_index = st.number_input("开始索引", value=0, min_value=0)
-                end_index = st.number_input("结束索引", value=len(linklist), min_value=0)
+                end_index = st.number_input(
+                    "结束索引", value=len(linklist), min_value=0
+                )
                 # get link list
                 linklist = linklist[start_index:end_index]
                 # get filelist
@@ -419,7 +441,9 @@ def main():
                                 or file_name.lower().endswith(".ett")
                             ):
                                 # read excel file
-                                filepath = temppath + "/" + file_name
+                                filepath = (
+                                    temppath + "/" + org_name_index + "/" + file_name
+                                )
                                 # display filepath
                                 st.write(filepath)
                                 # display file link
@@ -453,7 +477,7 @@ def main():
                     else:
                         resls = []
                         # get excel file content
-                        filepath = temppath + "/" + file_name
+                        filepath = temppath + "/" + org_name_index + "/" + file_name
                         filecontent = pd.read_excel(filepath, header=None)
                         # display shape
                         st.write(filecontent.shape)
@@ -482,7 +506,9 @@ def main():
                             st.write(file_link)
                             if file_name.lower().endswith(".pdf"):
                                 # get pdf file content
-                                filepath = temppath + "/" + file_name
+                                filepath = (
+                                    temppath + "/" + org_name_index + "/" + file_name
+                                )
                                 try:
                                     filecontent = pdf2table(filepath)
                                     # display count
@@ -507,7 +533,8 @@ def main():
                                     errls.append(file_name)
 
                             if pdfmode:
-                                filepath = get_convertfname(file_name, temppath, "pdf")
+                                folder = temppath + "/" + org_name_index
+                                filepath = get_convertfname(file_name, folder, "pdf")
                                 st.write(filepath)
                                 filecontent = pdf2table(filepath)
                                 # display count
@@ -535,7 +562,8 @@ def main():
                     elif pdfmode:
                         resls = []
                         # get excel file content
-                        filepath = get_convertfname(file_name, temppath, "pdf")
+                        folder = temppath + "/" + org_name_index
+                        filepath = get_convertfname(file_name, folder, "pdf")
                         st.write(filepath)
                         filecontent = pdf2table(filepath)
                         # display shape
@@ -551,7 +579,7 @@ def main():
                     else:
                         resls = []
                         # get excel file content
-                        filepath = temppath + "/" + file_name
+                        filepath = temppath + "/" + org_name_index + "/" + file_name
                         filecontent = pdf2table(filepath)
                         # display shape
                         st.write(filecontent.shape)
@@ -583,7 +611,8 @@ def main():
                                 or file_name.lower().endswith(".docm")
                             ):
                                 # get pdf file content
-                                filepath = get_convertfname(file_name, temppath, "docx")
+                                folder = temppath + "/" + org_name_index
+                                filepath = get_convertfname(file_name, folder, "docx")
                                 try:
                                     filecontent = word2df(filepath)
                                 except Exception as e:
@@ -617,7 +646,8 @@ def main():
                     else:
                         resls = []
                         # get excel file content
-                        filepath = get_convertfname(file_name, temppath, "docx")
+                        folder = temppath + "/" + org_name_index
+                        filepath = get_convertfname(file_name, folder, "docx")
                         st.write(filepath)
                         filecontent = word2df(filepath)
                         # display shape
@@ -656,7 +686,9 @@ def main():
                                     pdfname = (
                                         file_name.split("/")[-1].split(".")[0] + ".pdf"
                                     )
-                                    filepath = temppath + "/" + pdfname
+                                    filepath = (
+                                        temppath + "/" + org_name_index + "/" + pdfname
+                                    )
                                     st.write(filepath)
                                     try:
                                         filecontent = pdf2table(filepath)
@@ -666,7 +698,13 @@ def main():
                                         errls.append(file_name)
                                 else:
                                     # get pdf file content
-                                    filepath = temppath + "/" + file_name
+                                    filepath = (
+                                        temppath
+                                        + "/"
+                                        + org_name_index
+                                        + "/"
+                                        + file_name
+                                    )
                                     try:
                                         filecontent = picurl2table(filepath)
                                     except Exception as e:
@@ -699,7 +737,7 @@ def main():
                         resls = []
                         # get pdf file path
                         pdfname = file_name.split("/")[-1].split(".")[0] + ".pdf"
-                        filepath = temppath + "/" + pdfname
+                        filepath = temppath + "/" + org_name_index + "/" + pdfname
                         st.write(filepath)
                         filecontent = pdf2table(filepath)
                         # display shape
@@ -715,7 +753,7 @@ def main():
                     else:
                         resls = []
                         # get excel file content
-                        filepath = temppath + "/" + file_name
+                        filepath = temppath + "/" + org_name_index + "/" + file_name
                         filecontent = picurl2table(filepath)
                         # display shape
                         st.write(filecontent.shape)
@@ -768,7 +806,8 @@ def main():
                 # button for convert
                 convert_button = st.sidebar.button("word格式转换")
                 if convert_button:
-                    docxconvertion(temppath)
+                    folder = temppath + "/" + org_name_index
+                    docxconvertion(folder)
 
                 # button for convert docx to pdf
                 converttopdf_button = st.sidebar.button("文件转pdf")
@@ -777,11 +816,11 @@ def main():
                         for file_idx in file_idx_ls:
                             file_name = filelist[file_idx]
                             st.write(file_name)
-                            filepath = temppath + "/" + file_name
+                            filepath = temppath + "/" + org_name_index + "/" + file_name
                             docx2pdf(filepath, temppath)
                             st.write("转换成功" + filepath)
                     else:
-                        filepath = temppath + "/" + file_name
+                        filepath = temppath + "/" + org_name_index + "/" + file_name
                         docx2pdf(filepath, temppath)
 
                 # button for convert image to pdf
@@ -802,18 +841,23 @@ def main():
                                 or file_name.lower().endswith(".tif")
                             ):
                                 try:
-                                    filepath = temppath + "/" + file_name
+                                    filepath = (
+                                        temppath
+                                        + "/"
+                                        + org_name_index
+                                        + "/"
+                                        + file_name
+                                    )
                                     img_to_pdf(filepath, temppath)
                                 except Exception as e:
                                     st.write(e)
                                     st.write("转换失败")
 
                     else:
-                        filepath = temppath + "/" + file_name
+                        filepath = temppath + "/" + org_name_index + "/" + file_name
                         img_to_pdf(filepath, temppath)
 
         elif option == "内容处理":
-
             # initialize search result in session state
             if "pboc_updf" not in st.session_state:
                 st.session_state["pboc_updf"] = None
@@ -828,7 +872,7 @@ def main():
             else:
                 df = st.session_state["pboc_updf"]
 
-            st.markdown("## 更新表格")
+            st.markdown("### 待更新表格")
             dfupd = st.data_editor(df)
             # button to update column value
             updatebutton = st.sidebar.button("更新表格")

@@ -28,7 +28,6 @@ Image.MAX_IMAGE_PIXELS = None
 
 
 def docxurl2txt(url):
-
     text = ""
     try:
         doc = docx.Document(url)
@@ -157,11 +156,20 @@ def save_uploadedfile(uploadedfile, uploadpath):
 
 
 def docxconvertion(uploadpath):
-
     docdest = os.path.join(uploadpath, "doc")
     wpsdest = os.path.join(uploadpath, "wps")
     docxdest = os.path.join(uploadpath, "docx")
     docmdest = os.path.join(uploadpath, "docm")
+
+    # create folder if not exist
+    if not os.path.exists(docdest):
+        os.makedirs(docdest)
+    if not os.path.exists(wpsdest):
+        os.makedirs(wpsdest)
+    if not os.path.exists(docxdest):
+        os.makedirs(docxdest)
+    if not os.path.exists(docmdest):
+        os.makedirs(docmdest)
 
     docfiles = find_files(uploadpath, "*.doc", True)
     wpsfiles = find_files(uploadpath, "*.wps", True)
@@ -264,7 +272,6 @@ def remove_uploadfiles(uploadpath):
 
 # convert all files in uploadfolder to text
 def convert_uploadfiles(txtls, uploadpath):
-
     resls = []
     for file in txtls:
         # st.info(file)
@@ -342,7 +349,7 @@ def extract_text(df, uploadpath):
 def picurl2table(url):
     image, mylistx, mylisty = seg_pic(url)
     # display(image)
-    st.image(image)
+    # st.image(image)
     mylist = table_ocr(image, mylistx, mylisty)
     df = pd.DataFrame(mylist)
     return df
@@ -402,8 +409,8 @@ def seg_pic(img):
     rows, cols = binary.shape
 
     # 识别横线
-    kernel_width = cols // 20
-    kernel_height = rows // 20
+    # kernel_width = cols // 20
+    # kernel_height = rows // 20
     # 用于扩充或者腐蚀图像
     # kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_width, kernel_height))
 
@@ -489,7 +496,9 @@ def pdfurl2tableocr(url, uploadpath):
     resls = []
     # Iterate from 1 to total number of pages
     for image_file in image_file_list:
+        st.image(image_file)
         df = picurl2table(image_file)
+        # df = improved_table_ocr(image_file)
         resls.append(df)
         # delete image file
         os.remove(image_file)
@@ -501,7 +510,6 @@ def pdfurl2tableocr(url, uploadpath):
 
 
 def word2df(word):
-
     document = Document(word)
     data = []
     for table in document.tables:
@@ -577,3 +585,57 @@ def img_to_pdf(picpath, temppath):
 
     with open(pdfpath, "wb") as f:
         f.write(img2pdf.convert(picpath))
+
+
+def preprocess_image(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+    return thresh
+
+
+def find_table_contours(thresh):
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    return sorted(contours, key=cv2.contourArea, reverse=True)
+
+
+def get_table_rows(contours, image):
+    rows = []
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        if (
+            w > image.shape[1] * 0.5 and 20 < h < image.shape[0] * 0.1
+        ):  # Filter for likely table rows
+            rows.append((y, y + h))
+    return sorted(rows)
+
+
+def perform_ocr(image):
+    return pytesseract.image_to_string(image, lang="chi_sim+eng", config="--psm 6")
+
+
+def improved_table_ocr(image_path):
+    image = cv2.imread(image_path)
+
+    thresh = preprocess_image(image)
+    contours = find_table_contours(thresh)
+    rows = get_table_rows(contours, image)
+
+    table_data = []
+    header = []
+
+    for i, (y1, y2) in enumerate(rows):
+        row_image = image[y1:y2, :]
+        row_text = perform_ocr(row_image).replace("\n", " ").strip()
+
+        if i == 0:  # Assume first row is header
+            header = row_text.split()
+        elif row_text and len(row_text) > 10:  # Ignore very short texts
+            table_data.append(row_text.split())
+
+    # Ensure all rows have the same number of columns as the header
+    max_cols = len(header)
+    table_data = [row + [""] * (max_cols - len(row)) for row in table_data]
+
+    df = pd.DataFrame(table_data, columns=header)
+    return df

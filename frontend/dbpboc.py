@@ -4,22 +4,20 @@ import os
 import random
 import re
 import time
-import urllib
 from ast import literal_eval
 from urllib.parse import unquote
 
 import pandas as pd
 import pdfplumber
-import requests
 import streamlit as st
 from database import delete_data, get_collection, get_data, get_size, insert_data
-from doc2text import pdfurl2tableocr, picurl2table
+from doc2text import pdfurl2tableocr
 from selenium.webdriver.common.by import By
 from snapshot import get_chrome_driver
-from utils import df2aggrid, get_now, split_words
+from utils import get_now, split_words
 
 penpboc = "../pboc"
-temppath = r"../data/temp"
+temppath = r"../temp"
 
 # choose orgname index
 org2name = {
@@ -190,7 +188,9 @@ def display_summary():
         st.metric("案例日期范围", f"{min_date2} - {max_date2}")
 
     # sum max,min date and size by org
-    sumdf2 = oldsum2.groupby("区域")["发布日期"].agg(["max", "min", "count"]).reset_index()
+    sumdf2 = (
+        oldsum2.groupby("区域")["发布日期"].agg(["max", "min", "count"]).reset_index()
+    )
     sumdf2.columns = ["区域", "最近发文日期", "最早发文日期", "案例总数"]
     # sort by date
     sumdf2.sort_values(by=["最近发文日期"], ascending=False, inplace=True)
@@ -204,27 +204,33 @@ def display_summary():
 
 
 def get_pbocsum(orgname):
-    org_name_index = org2name[orgname]
-    beginwith = "pbocsum" + org_name_index
-    pendf = get_csvdf(penpboc, beginwith)
-    cols = ["name", "date", "link", "sum"]
+    # org_name_index = org2name[orgname]
+    # beginwith = "pbocsum" + org_name_index
+    beginwith = "pbocsum"
+    allpendf = get_csvdf(penpboc, beginwith)
+    # get pendf by orgname
+    pendf = allpendf[allpendf["区域"] == orgname]
+    # cols = ["name", "date", "link", "sum"]
     # if not empty
     if len(pendf) > 0:
-        # filter by cols
-        pendf = pendf[cols]
-        # format date
-        pendf["发布日期"] = pd.to_datetime(pendf["date"]).dt.date
+        # copy df
+        pendf = pendf.copy()
+        # pendf["发布日期"] = pd.to_datetime(pendf["date"]).dt.date
+        pendf.loc[:, "发布日期"] = pd.to_datetime(pendf["date"]).dt.date
     return pendf
 
 
 def get_pbocdetail(orgname):
-    if orgname == "":
-        org_name_index = ""
-    else:
-        org_name_index = org2name[orgname]
+    # if orgname == "":
+    #     org_name_index = ""
+    # else:
+    #     org_name_index = org2name[orgname]
 
-    beginwith = "pbocdtl" + org_name_index
+    # beginwith = "pbocdtl" + org_name_index
+    beginwith = "pbocdtl"
     d0 = get_csvdf(penpboc, beginwith)
+    if orgname != "":
+        d0 = d0[d0["区域"] == orgname]
     # reset index
     # d1 = d0[["title", "subtitle", "date", "doc", "id"]].reset_index(drop=True)
     # format date
@@ -239,7 +245,7 @@ def get_pbocdetail(orgname):
     #     st.write(orgname)
     #     d0["区域"] = orgname
     # fillna
-    d0.fillna("", inplace=True)
+    # d0.fillna("", inplace=True)
     return d0
 
 
@@ -287,7 +293,7 @@ def get_sumeventdf(orgname, start, end):
         st.info("page: " + str(i))
         st.info(str(count) + " begin")
         url = baseurl + str(i) + ".html"
-        st.info("url:" + url)
+        st.info("url: " + url)
         # st.write(org_name_index)
         try:
             browser.implicitly_wait(3)
@@ -344,6 +350,8 @@ def get_sumeventdf(orgname, start, end):
     browser.quit()
     sumdf = pd.concat(resultls)
     savecsv = "tempsumall" + org_name_index + str(count)
+    # add orgname
+    sumdf["区域"] = orgname
     savedf(sumdf, savecsv)
     return sumdf
 
@@ -376,6 +384,8 @@ def update_sumeventdf(currentsum, orgname):
         newdf.reset_index(drop=True, inplace=True)
         nowstr = get_now()
         savename = "pbocsum" + org_name_index + nowstr
+        # add orgname
+        newdf["区域"] = orgname
         savedf(newdf, savename)
     return newdf
 
@@ -411,9 +421,14 @@ def update_toupd(orgname):
         newdf = currentsum[currentsum["link"].isin(newidls)]
     # if newdf is not empty, save it
     if newdf.empty is False:
+        # sort by date desc
+        newdf.sort_values(by=["date"], ascending=False, inplace=True)
+        # reset index
         newdf.reset_index(drop=True, inplace=True)
         # save to update dtl list
         toupdname = "pboctoupd" + org_name_index
+        # add orgname
+        newdf["区域"] = orgname
         savedf(newdf, toupdname)
     return newdf
 
@@ -422,6 +437,7 @@ def update_toupd(orgname):
 def get_eventdetail(eventsum, orgname):
     org_name_index = org2name[orgname]
     browser = get_chrome_driver(temppath)
+    # browser = get_safari_driver()
     detaills = eventsum["link"].tolist()
 
     dresultls = []
@@ -430,7 +446,7 @@ def get_eventdetail(eventsum, orgname):
     count = 0
     for durl in detaills:
         st.info(str(count) + " begin")
-        st.info("url:" + durl)
+        st.info("url: " + durl)
         try:
             browser.get(durl)
 
@@ -561,7 +577,8 @@ def get_eventdetail(eventsum, orgname):
             if resultls:
                 tempdf = pd.concat(resultls)
                 savename = "temptodownload-" + org_name_index + str(count + 1)
-                savetemp(tempdf, savename)
+                # savetemp(tempdf, savename)
+                savetempsub(tempdf, savename, org_name_index)
 
         wait = random.randint(2, 20)
         time.sleep(wait)
@@ -579,7 +596,8 @@ def get_eventdetail(eventsum, orgname):
         savecsv = "pboctodownload" + org_name_index
         # reset index
         pbocdf.reset_index(drop=True, inplace=True)
-        savetemp(pbocdf, savecsv)
+        # savetemp(pbocdf, savecsv)
+        savetempsub(pbocdf, savecsv, org_name_index)
     else:
         pbocdf = pd.DataFrame()
 
@@ -589,7 +607,8 @@ def get_eventdetail(eventsum, orgname):
         savetable = "pboctotable" + org_name_index + get_now()
         # reset index
         tabledf = tabledf.reset_index(drop=True)
-        savetemp(tabledf, savetable)
+        # savetemp(tabledf, savetable)
+        savetempsub(tabledf, savetable, org_name_index)
     else:
         tabledf = pd.DataFrame()
 
@@ -613,6 +632,19 @@ def web2table(dl2):
 def savetemp(df, basename):
     savename = basename + ".csv"
     savepath = os.path.join(temppath, savename)
+    # create folder if not exist
+    if not os.path.exists(temppath):
+        os.makedirs(temppath)
+    df.to_csv(savepath, quoting=csv.QUOTE_NONNUMERIC, escapechar="\\")
+
+
+# save df to sub folder under temp folder
+def savetempsub(df, basename, subfolder):
+    savename = basename + ".csv"
+    savepath = os.path.join(temppath, subfolder, savename)
+    # create folder if not exist
+    if not os.path.exists(os.path.join(temppath, subfolder)):
+        os.makedirs(os.path.join(temppath, subfolder))
     df.to_csv(savepath, quoting=csv.QUOTE_NONNUMERIC, escapechar="\\")
 
 
@@ -620,12 +652,7 @@ def savetemp(df, basename):
 def download_attachment(linkurl, downloadls, orgname):
     org_name_index = org2name[orgname]
     browser = get_chrome_driver(temppath)
-
-    # dwndf = lendf[lendf[downcol].notnull()]
-    # # get link url
-    # linkurl = dwndf["link"]
-    # # get download url
-    # downloadls = dwndf[downcol].tolist()
+    # browser = get_safari_driver()
 
     resultls = []
     errorls = []
@@ -640,32 +667,12 @@ def download_attachment(linkurl, downloadls, orgname):
             filename = unquote(filename)
 
             # check if file exist
-            if os.path.exists(os.path.join(temppath, filename)):
+            if os.path.exists(os.path.join(temppath, org_name_index, filename)):
                 st.info("file exist: " + filename)
                 # continue
             else:
-                # save path
-                savepath = os.path.join(temppath, filename)
                 # download file by click the link
                 browser.get(url)
-
-            # ls2 = browser.find_elements(By.XPATH, "//table//table[2]//a")
-
-            # if len(ls2) > 0:
-            #     dwnlink = ls2[0].get_attribute("href")
-            #     if dwnlink:
-            #         browser.get(dwnlink)
-            #         url = dwnlink
-            #         filename = os.path.basename(url)
-            #         # unquote to decode url
-            #         filename = unquote(filename)
-            # response = requests.get(url, stream=True)
-            # with requests.get(url, stream=True) as response:
-            #     with open(savepath, 'wb') as f:
-            #         for chunk in response.iter_content(1024*8):
-            #             if chunk:
-            #                 f.write(chunk)
-            #                 f.flush()
 
             datals = {"link": link, "download": url, "file": filename}
             df = pd.DataFrame(datals, index=[0])
@@ -679,7 +686,8 @@ def download_attachment(linkurl, downloadls, orgname):
         if mod == 0 and count > 0:
             tempdf = pd.concat(resultls)
             savename = "temptofile-" + org_name_index + str(count + 1)
-            savetemp(tempdf, savename)
+            # savetemp(tempdf, savename)
+            savetempsub(tempdf, savename, org_name_index)
 
         wait = random.randint(2, 10)
         time.sleep(wait)
@@ -694,7 +702,8 @@ def download_attachment(linkurl, downloadls, orgname):
         savename = "pboctofile" + org_name_index
         # reset index
         tabledf.reset_index(drop=True, inplace=True)
-        savetemp(tabledf, savename)
+        # savetemp(tabledf, savename)
+        savetempsub(tabledf, savename, org_name_index)
     else:
         misdf = pd.DataFrame()
     # quit browser
@@ -704,14 +713,14 @@ def download_attachment(linkurl, downloadls, orgname):
 
 def get_pboctodownload(orgname):
     org_name_index = org2name[orgname]
-    beginwith = temppath + "/pboctodownload" + org_name_index
+    beginwith = temppath + "/" + org_name_index + "/pboctodownload" + org_name_index
     pendf = get_csvdf(penpboc, beginwith)
     return pendf
 
 
 def get_pboctotable(orgname):
     org_name_index = org2name[orgname]
-    beginwith = temppath + "/pboctotable" + org_name_index
+    beginwith = temppath + "/" + org_name_index + "/pboctotable" + org_name_index
     pendf = get_csvdf(penpboc, beginwith)
     # fillna
     # pendf.fillna("", inplace=True)
@@ -720,7 +729,7 @@ def get_pboctotable(orgname):
 
 def get_pboctofile(orgname):
     org_name_index = org2name[orgname]
-    beginwith = temppath + "/pboctofile" + org_name_index
+    beginwith = temppath + "/" + org_name_index + "/pboctofile" + org_name_index
     pendf = get_csvdf(penpboc, beginwith)
     return pendf
 
@@ -729,11 +738,15 @@ def save_pbocdetail(df, orgname):
     org_name_index = org2name[orgname]
     # get sum
     sumdf = get_pbocsum(orgname)
+    # get current detail
+    olddtl = get_pbocdetail(orgname)
     # merge with df
     dfupd = pd.merge(df, sumdf, left_on="link", right_on="link", how="left")
     dfupd["区域"] = orgname
+    # find new df not in old detail
+    newdf = dfupd[~dfupd["link"].isin(olddtl["link"])]
     savename = penpboc + "/pbocdtl" + org_name_index + get_now()
-    savedf(dfupd, savename)
+    savedf(newdf, savename)
 
 
 def pdf2table(pdffile):
@@ -776,11 +789,8 @@ def pdf2table(pdffile):
 def save_pboctable(df, orgname):
     org_name_index = org2name[orgname]
     savename = "pboctotable" + org_name_index + get_now()
-    # display columns
-
-    # set columns
-    # df.columns = savecols
-    savetemp(df, savename)
+    # savetemp(df, savename)
+    savetempsub(df, savename, org_name_index)
 
 
 def mergetable(df, col):
@@ -795,7 +805,6 @@ def mergetable(df, col):
 
 
 def download_pbocsum():
-
     st.markdown("#### 案例数据下载")
 
     # download by org
@@ -805,12 +814,12 @@ def download_pbocsum():
     dtllist = []
 
     for orgname in org2name.keys():
-
         st.markdown("##### " + orgname)
         # get orgname
         org_name_index = org2name[orgname]
-        beginwith = "pbocsum" + org_name_index
-        oldsum = get_csvdf(penpboc, beginwith)
+        # beginwith = "pbocsum" + org_name_index
+        # oldsum = get_csvdf(penpboc, beginwith)
+        oldsum = get_pbocsum(orgname)
         oldsum["区域"] = orgname
         lensum = len(oldsum)
         st.write("列表数据量: " + str(lensum))
@@ -819,9 +828,10 @@ def download_pbocsum():
         maxdate = oldsum["date"].max()
         st.write("列表日期: " + maxdate + " - " + mindate)
 
-        beginwith = "pbocdtl" + org_name_index
-        dtl = get_csvdf(penpboc, beginwith)
-        dtl["区域"] = orgname
+        # beginwith = "pbocdtl" + org_name_index
+        # dtl = get_csvdf(penpboc, beginwith)
+        # dtl["区域"] = orgname
+        dtl = get_pbocdetail(orgname)
         lendtl = len(dtl)
         st.write("详情数据量: " + str(lendtl))
         # get min and max date
@@ -859,12 +869,8 @@ def download_pbocsum():
     maxdate = allsum["date"].max()
     st.write("列表日期: " + maxdate + " - " + mindate)
 
-    lendtl = len(alldtl)
-    st.write("详情数据量: " + str(lendtl))
-    # get min and max date
-    mindate = alldtl["date"].min()
-    maxdate = alldtl["date"].max()
-    st.write("详情日期: " + maxdate + " - " + mindate)
+    # display null sum
+    st.write(allsum.isnull().sum())
 
     # listname
     listname = "pbocsumall" + get_now() + ".csv"
@@ -872,6 +878,18 @@ def download_pbocsum():
     st.download_button(
         "下载列表数据", data=allsum.to_csv().encode("utf_8_sig"), file_name=listname
     )
+    
+    lendtl = len(alldtl)
+    st.write("详情数据量: " + str(lendtl))
+    # get min and max date
+    mindate = alldtl["date"].min()
+    maxdate = alldtl["date"].max()
+    st.write("详情日期: " + maxdate + " - " + mindate)
+
+    # display null sum
+    st.write(alldtl.isnull().sum())
+
+
     # detailname
     detailname = "pbocdtlall" + get_now() + ".csv"
     # download detail data
@@ -891,7 +909,9 @@ def display_eventdetail(search_df):
     st.markdown("### 搜索结果" + "(" + str(total) + "条)")
     # display download button
     st.download_button(
-        "下载搜索结果", data=search_dfnew.to_csv().encode("utf_8_sig"), file_name="搜索结果.csv"
+        "下载搜索结果",
+        data=search_dfnew.to_csv().encode("utf_8_sig"),
+        file_name="搜索结果.csv",
     )
     # display columns
     discols = ["发布日期", "处罚决定书文号", "企业名称", "区域"]
@@ -903,14 +923,21 @@ def display_eventdetail(search_df):
     # change column name
     # display_df.columns = ["link", "文号","当事人",  "发布日期", "区域"]
 
-    data = df2aggrid(display_df)
+    data = st.dataframe(display_df, on_select="rerun", selection_mode="single-row")
+
+    selected_rows = data["selection"]["rows"]
+
+    # data = df2aggrid(display_df)
     # display data
-    selected_rows = data["selected_rows"]
+    # selected_rows = data["selected_rows"]
     if selected_rows == []:
         st.error("请先选择查看案例")
         st.stop()
 
-    id = selected_rows[0]["序号"]
+    # id = selected_rows[0]["序号"]
+    id = display_df.loc[selected_rows[0], "序号"]
+    # display event detail
+    st.markdown("##### 案情经过")
     # select search_dfnew by id
     selected_rows_df = search_dfnew[search_dfnew.index == id]
     # transpose and set column name
@@ -955,6 +982,11 @@ def dfdelcol(resls, delstr, savecols, halfmode=False):
         if len(comls) == 8:
             cols = [0, 1, 2, 3, 4, 5, 6, 7]
             savels = [1, 2, 3, 4, 5, 6, 8, 9]
+
+        # fix 9 columns 删除公示期限
+        if len(comls) == 11:
+            cols = [0, 1, 2, 3, 4, 5, 6, 8, 9, 10]
+            savels = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
         # fix 9 columns 删除备注
         # if len(comls) == 9:
@@ -1093,6 +1125,7 @@ def dfdelcol(resls, delstr, savecols, halfmode=False):
 
         # set column name
         dfnew.columns = newsave
+
         st.write(dfnew)
         resultls.append(dfnew)
     if resultls:
@@ -1105,7 +1138,6 @@ def dfdelcol(resls, delstr, savecols, halfmode=False):
 
 
 def uplink_pbocsum():
-
     st.markdown("#### 案例数据上线")
 
     beginwith = "pbocsum"
@@ -1128,7 +1160,7 @@ def uplink_pbocsum():
     st.write("详情日期: " + maxdate + " - " + mindate)
 
     # listname
-    listname = "pbocsum" + get_now() + ".csv"
+    # listname = "pbocsum" + get_now() + ".csv"
     # download list data
     # st.download_button(
     #     "下载列表数据", data=oldsum.to_csv().encode("utf_8_sig"), file_name=listname
@@ -1165,7 +1197,7 @@ def uplink_pbocsum():
     )
 
     # detailname
-    detailname = "pbocdtl" + get_now() + ".csv"
+    # detailname = "pbocdtl" + get_now() + ".csv"
     # download detail data
     # st.download_button(
     #     "下载详情数据", data=dtllink.to_csv().encode("utf_8_sig"), file_name=detailname
@@ -1184,7 +1216,9 @@ def uplink_pbocsum():
 
     # download mongodb collection data
     st.download_button(
-        "下载上线数据", data=olddf.to_csv().encode("utf_8_sig"), file_name="上线案例数据.csv"
+        "下载上线数据",
+        data=olddf.to_csv().encode("utf_8_sig"),
+        file_name="上线案例数据.csv",
     )
 
     # delete data from the MongoDB collection
@@ -1200,7 +1234,9 @@ def uplink_pbocsum():
 
     # download update data
     st.download_button(
-        "下载待更新数据", data=updf.to_csv().encode("utf_8_sig"), file_name="待更新数据.csv"
+        "下载待更新数据",
+        data=updf.to_csv().encode("utf_8_sig"),
+        file_name="待更新数据.csv",
     )
 
     # Insert data into the MongoDB collection
@@ -1219,3 +1255,9 @@ def toupt_pbocsum(org_name_ls):
         if maxdtldate < maxsumdate:
             touptls.append(org_name)
     return touptls
+
+
+# orgname to orgname_index
+def get_orgname_index(orgname):
+    org_name_index = org2name[orgname]
+    return org_name_index

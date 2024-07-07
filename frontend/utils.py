@@ -4,16 +4,12 @@ import os
 
 import pandas as pd
 import requests
-import streamlit as st
 import streamlit.components.v1 as components
 from pyecharts import options as opts
-from pyecharts.charts import Bar, Grid, Line, Liquid, Page, Pie
 from pyecharts.components import Table
-from pyecharts.options import ComponentTitleOpts
 from st_aggrid import AgGrid
 from st_aggrid.grid_options_builder import GridOptionsBuilder
 from st_aggrid.shared import GridUpdateMode
-from streamlit_echarts import st_pyecharts
 
 rulefolder = "../data/rules"
 # backendurl = "http://backend.docker:8000"

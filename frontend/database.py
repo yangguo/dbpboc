@@ -6,7 +6,8 @@ import os
 
 load_dotenv()
 
-mongo_connection_string = os.getenv("MONGO_CONNECTION_STRING")
+mongo_connection_string = os.getenv("MONGO_DB_URL")
+
 
 # Connect to the MongoDB Docker container
 @st.cache_resource
@@ -45,6 +46,7 @@ def get_collection(dbname, collectionname):
 #     db = client["test_database"]
 #     collection = db[name]
 #     return collection
+
 
 # insert dataframes into MongoDB
 def insert_data(df, collection):
