@@ -1459,7 +1459,9 @@ def display_search_df(searchdf):
 
     # count by orgname
     df_org_count = df_month.groupby(["区域"]).size().reset_index(name="count")
-    # st.write(df_org_count)
+    # sort by count
+    df_org_count = df_org_count.sort_values(by="count", ascending=False)
+    st.write(df_org_count)
     org_ls = df_org_count["区域"].tolist()
     count_ls = df_org_count["count"].tolist()
     new_orgls, new_countls = count_by_province(org_ls, count_ls)
@@ -1479,11 +1481,11 @@ def display_search_df(searchdf):
         # st.experimental_rerun()
 
     # 图四解析开始
-    orgls = df_org_count["区域"].value_counts().keys().tolist()
-    countls = df_org_count["区域"].value_counts().tolist()
+    # orgls = df_org_count["区域"].value_counts().keys().tolist()
+    # countls = df_org_count["区域"].value_counts().tolist()
     result = ""
 
-    for org, count in zip(orgls[:3], countls[:3]):
+    for org, count in zip(org_ls[:3], count_ls[:3]):
         result = result + org + "（" + str(count) + "起）,"
 
     image4_text = (
@@ -1492,7 +1494,7 @@ def display_search_df(searchdf):
         + "至"
         + maxmonth
         + "，共"
-        + str(len(orgls))
+        + str(len(org_ls))
         + "家地区监管机构提出处罚意见，"
         + "排名前三的机构为："
         + result[: len(result) - 1]
