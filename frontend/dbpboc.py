@@ -18,7 +18,7 @@ from snapshot import get_chrome_driver
 from utils import get_now, split_words
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
-from collections import defaultdict
+from collections import Counter
 
 
 penpboc = "../pboc"
@@ -1366,7 +1366,7 @@ def display_search_df(searchdf):
             searchdfnew.drop(columns=["month"], inplace=True)
 
             # set session state
-            st.session_state["search_result_csrc2"] = searchdfnew
+            st.session_state["search_result_pboc"] = searchdfnew
             # refresh page
             # st.experimental_rerun()
 
@@ -1417,7 +1417,7 @@ def display_search_df(searchdf):
     #     # drop column "month"
     #     searchdfnew.drop(columns=["month"], inplace=True)
     #     # set session state
-    #     st.session_state["search_result_csrc2"] = searchdfnew
+    #     st.session_state["search_result_pboc"] = searchdfnew
     #     # refresh page
     #     # st.experimental_rerun()
 
@@ -1488,7 +1488,7 @@ def display_search_df(searchdf):
         # filter searchdf by orgname
         searchdfnew = searchdf[searchdf["区域"] == orgname]
         # set session state
-        st.session_state["search_result_csrc2"] = searchdfnew
+        st.session_state["search_result_pboc"] = searchdfnew
         # refresh page
         # st.experimental_rerun()
 
@@ -1631,28 +1631,35 @@ def count_by_province(city_ls, count_ls):
     if len(city_ls) != len(count_ls):
         raise ValueError("城市列表和计数列表的长度必须相同")
 
-    province_counts = defaultdict(int)
+    # Use Counter for efficient counting
+    province_counts = Counter()
 
-    for city, count in zip(city_ls, count_ls):
-        # province = get_chinese_province_nominatim(city)
-        province = city2province[city]
-        province_counts[province] += count
-        time.sleep(1)  # Be nice to the Nominatim server
+    # Use list comprehension for faster iteration
+    province_counts.update(
+        {city2province[loc]: count for loc, count in zip(city_ls, count_ls)}
+    )
 
-    # Sort provinces by count in descending order
-    sorted_provinces = sorted(province_counts.items(), key=lambda x: x[1], reverse=True)
+    # Use sorted with key function for efficient sorting
+    sorted_provinces = sorted(province_counts.items(), key=lambda x: (-x[1], x[0]))
 
-    provinces = [item[0] for item in sorted_provinces]
-    counts = [item[1] for item in sorted_provinces]
+    # Use zip for efficient unpacking
+    provinces, counts = zip(*sorted_provinces)
 
-    return provinces, counts
+    return list(provinces), list(counts)
+
+
+def get_chinese_province(location):
+    if location == "总部":
+        return "北京市"
+    if location == "全国":
+        return "未知省份"
+    if location == "无":
+        return "未知省份"
+
+    return extract_province(location)
 
 
 def get_chinese_province_nominatim(city, country="中国"):
-    # Special case for Headquarters
-    if city == "总部":
-        return "北京市"
-
     geolocator = Nominatim(user_agent="city_to_chinese_province_converter")
 
     try:
@@ -1683,3 +1690,60 @@ def get_chinese_province_nominatim(city, country="中国"):
     except (GeocoderTimedOut, GeocoderUnavailable):
         print("地理编码服务超时或不可用。请稍后再试。")
         return "未知省份"
+
+
+def extract_province(location_string):
+    # Dictionary of provinces and autonomous regions with their common abbreviations
+    province_dict = {
+        "北京": "北京市",
+        "天津": "天津市",
+        "河北": "河北省",
+        "山西": "山西省",
+        "内蒙古": "内蒙古自治区",
+        "辽宁": "辽宁省",
+        "吉林": "吉林省",
+        "黑龙江": "黑龙江省",
+        "上海": "上海市",
+        "江苏": "江苏省",
+        "浙江": "浙江省",
+        "安徽": "安徽省",
+        "福建": "福建省",
+        "江西": "江西省",
+        "山东": "山东省",
+        "河南": "河南省",
+        "湖北": "湖北省",
+        "湖南": "湖南省",
+        "广东": "广东省",
+        "广西": "广西壮族自治区",
+        "海南": "海南省",
+        "重庆": "重庆市",
+        "四川": "四川省",
+        "贵州": "贵州省",
+        "云南": "云南省",
+        "西藏": "西藏自治区",
+        "陕西": "陕西省",
+        "甘肃": "甘肃省",
+        "青海": "青海省",
+        "宁夏": "宁夏回族自治区",
+        "新疆": "新疆维吾尔自治区",
+    }
+
+    # Check for direct matches or matches with common abbreviations
+    for key, value in province_dict.items():
+        if location_string.startswith(key):
+            return value
+
+    # Handle autonomous prefectures and cities
+    parts = re.split(r"(自治州|地区|市)", location_string)
+    if len(parts) > 1:
+        potential_province = parts[0]
+        for key, value in province_dict.items():
+            if potential_province.startswith(key):
+                return value
+
+    # If no match found, try to extract using Nominatim
+    province = get_chinese_province_nominatim(location_string)
+    if province:
+        return province
+
+    return "未知省份"
