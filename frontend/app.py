@@ -28,6 +28,7 @@ from dbpboc import (
     update_toupd,
     uplink_pbocsum,
     get_orgname_index,
+    get_pboccat,
 )
 from doc2text import (
     docx2pdf,
@@ -216,6 +217,13 @@ def main():
         #     resls.append(df)
         # dfl = pd.concat(resls)
         dfl = get_pbocdetail("")
+        # st.write(dfl)
+        # get catdf
+        catdf = get_pboccat()
+        # st.write(catdf)
+        # merge dfl and catdf
+        dfl = pd.merge(dfl, catdf, left_on="link", right_on="id", how="left")
+        # dfl['amount']=dfl['amount'].fillna(0)
         # st.write(dfl)
         # get min and max date of old eventdf
         min_date = dfl["发布日期"].min()

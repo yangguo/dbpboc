@@ -116,7 +116,7 @@ city2province = {
     "乌鲁木齐": "新疆维吾尔自治区",
     "南宁": "广西壮族自治区",
     "贵阳": "贵州省",
-    "福州": "广东省",
+    "福州": "福建省",
     "成都": "四川省",
     "呼和浩特": "内蒙古自治区",
     "郑州": "河南省",
@@ -205,7 +205,7 @@ def searchpboc(
         & (df["行政处罚内容"].str.contains(penalty_text))
         & (df["作出行政处罚决定机关名称"].str.contains(org_text))
         & (df["区域"].isin(province))
-    ][col]
+    ]  # [col]
     # sort by date desc
     searchdf.sort_values(by=["发布日期"], ascending=False, inplace=True)
     # drop duplicates
@@ -287,6 +287,10 @@ def get_pbocdetail(orgname):
     if len(d0) > 0:
         # format date
         d0["发布日期"] = pd.to_datetime(d0["date"]).dt.date
+        # fillna
+        # d0["序号"] = d0["序号"].fillna(1)
+        # fix index data type
+        # d0["序号"] = d0["序号"].astype(float).astype(int)
     # if orgname != "":
     #     st.write(orgname)
     #     d0["区域"] = orgname
@@ -1337,23 +1341,7 @@ def display_search_df(searchdf):
     if showgraph1:
         x_data = df_month_count["month"].tolist()
         y_data = df_month_count["count"].tolist()
-        # draw echarts bar chart
-        # bar = (
-        #     Bar()
-        #     .add_xaxis(xaxis_data=x_data)
-        #     .add_yaxis(series_name="数量", y_axis=y_data, yaxis_index=0)
-        #     .set_global_opts(
-        #         title_opts=opts.TitleOpts(title="按发文时间统计"),
-        #         visualmap_opts=opts.VisualMapOpts(max_=max(y_data), min_=min(y_data)),
-        #     )
-        # )
-        # use events
-        # events = {
-        #     "click": "function(params) { console.log(params.name); return params.name }",
-        #     # "dblclick":"function(params) { return [params.type, params.name, params.value] }"
-        # }
-        # use events
-        # yearmonth = st_pyecharts(bar, events=events)
+
         bar, yearmonth = print_bar(x_data, y_data, "处罚数量", "按发文时间统计")
         # st.write(yearmonth)
         if yearmonth is not None:
@@ -1405,69 +1393,69 @@ def display_search_df(searchdf):
         # display total coun
         st.markdown("##### " + image1_text)
 
-    # # get eventdf sum amount by month
-    # df_sum, df_sigle_penalty = sum_amount_by_month(df_month)
+    # get eventdf sum amount by month
+    df_sum, df_sigle_penalty = sum_amount_by_month(df_month)
 
-    # sum_data = df_sum["sum"].tolist()
-    # line, yearmonthline = print_line(x_data, sum_data, "处罚金额", "案例金额统计")
+    sum_data = df_sum["sum"].tolist()
+    line, yearmonthline = print_line(x_data, sum_data, "处罚金额", "案例金额统计")
 
-    # if yearmonthline is not None:
-    #     # filter date by year and month
-    #     searchdfnew = df_month[df_month["month"] == yearmonthline]
-    #     # drop column "month"
-    #     searchdfnew.drop(columns=["month"], inplace=True)
-    #     # set session state
-    #     st.session_state["search_result_pboc"] = searchdfnew
-    #     # refresh page
-    #     # st.experimental_rerun()
+    if yearmonthline is not None:
+        # filter date by year and month
+        searchdfnew = df_month[df_month["month"] == yearmonthline]
+        # drop column "month"
+        searchdfnew.drop(columns=["month"], inplace=True)
+        # set session state
+        st.session_state["search_result_pboc"] = searchdfnew
+        # refresh page
+        # st.experimental_rerun()
 
-    # # 图二解析：
-    # sum_data_number = 0  # 把案件金额的数组进行求和
-    # more_than_100 = 0  # 把案件金额大于100的数量进行统计
-    # case_total = 0  # 把案件的总数量进行统计
+    # 图二解析：
+    sum_data_number = 0  # 把案件金额的数组进行求和
+    more_than_100 = 0  # 把案件金额大于100的数量进行统计
+    case_total = 0  # 把案件的总数量进行统计
 
-    # penaltycount = df_sigle_penalty["amount"].tolist()
-    # for i in penaltycount:
+    penaltycount = df_sigle_penalty["amount"].tolist()
+    for i in penaltycount:
+        sum_data_number = sum_data_number + i / 10000
+        if i > 100 * 10000:
+            more_than_100 = more_than_100 + 1
+        if i != 0:
+            case_total = case_total + 1
+
+    # for i in sum_data:
     #     sum_data_number = sum_data_number + i / 10000
     #     if i > 100 * 10000:
     #         more_than_100 = more_than_100 + 1
-    #     if i != 0:
-    #         case_total = case_total + 1
-
-    # # for i in sum_data:
-    # #     sum_data_number = sum_data_number + i / 10000
-    # #     if i > 100 * 10000:
-    # #         more_than_100 = more_than_100 + 1
-    # # sum_data_number=round(sum_data_number,2)
-    # if case_total > 0:
-    #     avg_sum = round(sum_data_number / case_total, 2)
-    # else:
-    #     avg_sum = 0
-    # # get index of max sum
-    # topsum1 = df_sum["sum"].nlargest(1)
-    # topsum1_index = df_sum["sum"].idxmax()
-    # # get month value of max count
-    # topsum1month = df_sum.loc[topsum1_index, "month"]
-    # image2_text = (
-    #     "图二解析：从"
-    #     + minmonth
-    #     + "至"
-    #     + maxmonth
-    #     + "，共发生罚款案件"
-    #     + str(case_total)
-    #     + "起;期间共涉及处罚金额"
-    #     + str(round(sum_data_number, 2))
-    #     + "万元，处罚事件平均处罚金额为"
-    #     + str(avg_sum)
-    #     + "万元，其中处罚金额高于100万元处罚事件共"
-    #     + str(more_than_100)
-    #     + "起。"
-    #     + topsum1month
-    #     + "发生最高处罚金额"
-    #     + str(round(topsum1.values[0] / 10000, 2))
-    #     + "万元。"
-    # )
-    # st.markdown("##### " + image2_text)
+    # sum_data_number=round(sum_data_number,2)
+    if case_total > 0:
+        avg_sum = round(sum_data_number / case_total, 2)
+    else:
+        avg_sum = 0
+    # get index of max sum
+    topsum1 = df_sum["sum"].nlargest(1)
+    topsum1_index = df_sum["sum"].idxmax()
+    # get month value of max count
+    topsum1month = df_sum.loc[topsum1_index, "month"]
+    image2_text = (
+        "图二解析：从"
+        + minmonth
+        + "至"
+        + maxmonth
+        + "，共发生罚款案件"
+        + str(case_total)
+        + "起;期间共涉及处罚金额"
+        + str(round(sum_data_number, 2))
+        + "万元，处罚事件平均处罚金额为"
+        + str(avg_sum)
+        + "万元，其中处罚金额高于100万元处罚事件共"
+        + str(more_than_100)
+        + "起。"
+        + topsum1month
+        + "发生最高处罚金额"
+        + str(round(topsum1.values[0] / 10000, 2))
+        + "万元。"
+    )
+    st.markdown("##### " + image2_text)
 
     # count by orgname
     df_org_count = df_month.groupby(["区域"]).size().reset_index(name="count")
@@ -1481,9 +1469,7 @@ def display_search_df(searchdf):
     # display map
     # components.html(map.render_embed(), height=650)
 
-    pie, orgname = print_pie(
-        df_org_count["区域"].tolist(), df_org_count["count"].tolist(), "按发文机构统计"
-    )
+    pie, orgname = print_pie(org_ls, count_ls, "按发文机构统计")
     if orgname is not None:
         # filter searchdf by orgname
         searchdfnew = searchdf[searchdf["区域"] == orgname]
@@ -1493,8 +1479,8 @@ def display_search_df(searchdf):
         # st.experimental_rerun()
 
     # 图四解析开始
-    orgls = df_month["区域"].value_counts().keys().tolist()
-    countls = df_month["区域"].value_counts().tolist()
+    orgls = df_org_count["区域"].value_counts().keys().tolist()
+    countls = df_org_count["区域"].value_counts().tolist()
     result = ""
 
     for org, count in zip(orgls[:3], countls[:3]):
@@ -1634,16 +1620,16 @@ def count_by_province(city_ls, count_ls):
     # Use Counter for efficient counting
     province_counts = Counter()
 
-    # Use list comprehension for faster iteration
-    province_counts.update(
-        {city2province[loc]: count for loc, count in zip(city_ls, count_ls)}
-    )
+    for city, count in zip(city_ls, count_ls):
+        province = city2province[city]
+        if province:
+            province_counts[province] += count
+        else:
+            raise ValueError(f"City {city} is not found in city2province mapping")
 
-    # Use sorted with key function for efficient sorting
     sorted_provinces = sorted(province_counts.items(), key=lambda x: (-x[1], x[0]))
 
-    # Use zip for efficient unpacking
-    provinces, counts = zip(*sorted_provinces)
+    provinces, counts = zip(*sorted_provinces) if sorted_provinces else ([], [])
 
     return list(provinces), list(counts)
 
@@ -1747,3 +1733,28 @@ def extract_province(location_string):
         return province
 
     return "未知省份"
+
+
+def get_pboccat():
+    amtdf = get_csvdf(penpboc, "pboccat")
+    # process amount
+    amtdf["amount"] = amtdf["amount"].astype(float)
+    # rename columns law to lawlist
+    amtdf.rename(columns={"law": "lawlist"}, inplace=True)
+    # return amtdf[["id", "amount"]]
+    return amtdf
+
+
+def sum_amount_by_month(df):
+    # amtdf = get_cbircamt()
+    # df1 = pd.merge(
+    #     df, amtdf.drop_duplicates("id"), left_on="id", right_on="id", how="left"
+    # )
+    df1 = df
+    df1["amount"] = df1["amount"].fillna(0)
+    df1["发布日期"] = pd.to_datetime(df1["发布日期"]).dt.date
+    # df=df[df['发文日期']>=pd.to_datetime('2020-01-01')]
+    df1["month"] = df1["发布日期"].apply(lambda x: x.strftime("%Y-%m"))
+    df_month_sum = df1.groupby(["month"])["amount"].sum().reset_index(name="sum")
+    df_sigle_penalty = df1[["month", "amount"]]
+    return df_month_sum, df_sigle_penalty
