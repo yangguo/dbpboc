@@ -29,6 +29,7 @@ from dbpboc import (
     uplink_pbocsum,
     get_orgname_index,
     get_pboccat,
+    update_pboclabel,
 )
 from doc2text import (
     docx2pdf,
@@ -98,7 +99,7 @@ def main():
         "案例搜索",
         "案例更新",
         "附件处理",
-        # "案例分类",
+        "案例分类",
         "案例下载",
         "案例上线",
     ]
@@ -222,7 +223,7 @@ def main():
         catdf = get_pboccat()
         # st.write(catdf)
         # merge dfl and catdf
-        dfl = pd.merge(dfl, catdf, left_on="link", right_on="id", how="left")
+        dfl = pd.merge(dfl, catdf, on="uid", how="left")
         # dfl['amount']=dfl['amount'].fillna(0)
         # st.write(dfl)
         # get min and max date of old eventdf
@@ -249,6 +250,10 @@ def main():
                 people_text = st.text_input("当事人关键词")
                 # input event keyword
                 event_text = st.text_input("案情关键词")
+
+                # input minimum penalty amount
+                min_penalty = st.number_input("最低处罚金额", value=0)
+
             with col2:
                 end_date = st.date_input("结束日期", value=max_date, min_value=min_date)
                 # input penalty keyword
@@ -282,6 +287,7 @@ def main():
                 penalty_text,
                 org_text,
                 province,
+                min_penalty,
             ]
             search_df = searchpboc(
                 dfl,
@@ -293,6 +299,7 @@ def main():
                 penalty_text,
                 org_text,
                 province,
+                min_penalty,
             )
             # save search_df to session state
             st.session_state["search_result_pboc"] = search_df
@@ -939,6 +946,12 @@ def main():
 
     elif choice == "案例上线":
         uplink_pbocsum()
+
+    elif choice == "案例分类":
+        # button for generate label text
+        labeltext_button = st.button("生成待更新案例")
+        if labeltext_button:
+            update_pboclabel()
 
 
 if __name__ == "__main__":

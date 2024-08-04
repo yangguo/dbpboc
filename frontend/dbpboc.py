@@ -16,9 +16,11 @@ from doc2text import pdfurl2tableocr
 from selenium.webdriver.common.by import By
 from snapshot import get_chrome_driver
 from utils import get_now, split_words
-from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
+
+# from geopy.geocoders import Nominatim
+# from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
 from collections import Counter
+import uuid
 
 
 penpboc = "../pboc"
@@ -173,6 +175,7 @@ def searchpboc(
     penalty_text,
     org_text,
     province,
+    min_penalty,
 ):
     # st.write(df)
     # split words
@@ -205,13 +208,14 @@ def searchpboc(
         & (df["行政处罚内容"].str.contains(penalty_text))
         & (df["作出行政处罚决定机关名称"].str.contains(org_text))
         & (df["区域"].isin(province))
+        & (df["amount"] >= min_penalty)
     ]  # [col]
     # sort by date desc
-    searchdf.sort_values(by=["发布日期"], ascending=False, inplace=True)
+    searchdf = searchdf.sort_values(by=["发布日期"], ascending=False)
     # drop duplicates
     # searchdf.drop_duplicates(subset=["link"], inplace=True)
     # reset index
-    searchdf.reset_index(drop=True, inplace=True)
+    searchdf = searchdf.reset_index(drop=True)
     return searchdf
 
 
@@ -795,6 +799,9 @@ def save_pbocdetail(df, orgname):
     dfupd["区域"] = orgname
     # find new df not in old detail
     newdf = dfupd[~dfupd["link"].isin(olddtl["link"])]
+    # add uid using uuid
+    newdf["uid"] = [str(uuid.uuid4()) for _ in range(len(newdf))]
+
     savename = penpboc + "/pbocdtl" + org_name_index + get_now()
     savedf(newdf, savename)
 
@@ -908,7 +915,7 @@ def download_pbocsum():
         dtllist.append(dtl)
 
     # download all data
-    st.markdown("##### 全部数据")
+    st.markdown("#### 全部数据")
 
     # get all sum
     allsum = pd.concat(sumlist)
@@ -917,13 +924,13 @@ def download_pbocsum():
 
     lensum = len(allsum)
     st.write("列表数据量: " + str(lensum))
+    # get unique link number
+    linkno = allsum["link"].nunique()
+    st.write("链接数: " + str(linkno))
     # get min and max date
     mindate = allsum["date"].min()
     maxdate = allsum["date"].max()
     st.write("列表日期: " + maxdate + " - " + mindate)
-
-    # display null sum
-    st.write(allsum.isnull().sum())
 
     # listname
     listname = "pbocsumall" + get_now() + ".csv"
@@ -931,16 +938,18 @@ def download_pbocsum():
     st.download_button(
         "下载列表数据", data=allsum.to_csv().encode("utf_8_sig"), file_name=listname
     )
+    # display null sum
+    st.write(allsum.isnull().sum())
 
     lendtl = len(alldtl)
     st.write("详情数据量: " + str(lendtl))
+    # get unique link number
+    linkno = alldtl["link"].nunique()
+    st.write("链接数: " + str(linkno))
     # get min and max date
     mindate = alldtl["date"].min()
     maxdate = alldtl["date"].max()
     st.write("详情日期: " + maxdate + " - " + mindate)
-
-    # display null sum
-    st.write(alldtl.isnull().sum())
 
     # detailname
     detailname = "pbocdtlall" + get_now() + ".csv"
@@ -948,6 +957,26 @@ def download_pbocsum():
     st.download_button(
         "下载详情数据", data=alldtl.to_csv().encode("utf_8_sig"), file_name=detailname
     )
+    # display null sum
+    st.write(alldtl.isnull().sum())
+
+    # get category data
+    catdf = get_pboccat()
+    # get length of catdf
+    lencat = len(catdf)
+    st.write("分类数据量: " + str(lencat))
+    # get unique id number
+    idno = catdf["id"].nunique()
+    st.write("分类id数: " + str(idno))
+
+    catname = "pboccat" + get_now() + ".csv"
+    # download detail data
+    st.download_button(
+        "下载分类数据", data=catdf.to_csv().encode("utf_8_sig"), file_name=catname
+    )
+
+    # display null sum
+    st.write(catdf.isnull().sum())
 
 
 # display event detail
@@ -966,12 +995,12 @@ def display_eventdetail(search_df):
         file_name="搜索结果.csv",
     )
     # display columns
-    discols = ["发布日期", "处罚决定书文号", "企业名称", "区域"]
+    discols = ["发布日期", "处罚决定书文号", "企业名称", "区域", "uid"]
     # get display df
-    display_df = search_dfnew[discols]
+    display_df = search_dfnew[discols].copy()
     # set index column using loc
     # display_df["序号"] = display_df.index
-    display_df.loc[:, "序号"] = display_df.index
+    # display_df.loc[:, "序号"] = display_df.index
     # change column name
     # display_df.columns = ["link", "文号","当事人",  "发布日期", "区域"]
 
@@ -987,11 +1016,54 @@ def display_eventdetail(search_df):
         st.stop()
 
     # id = selected_rows[0]["序号"]
-    id = display_df.loc[selected_rows[0], "序号"]
+    uid = display_df.loc[selected_rows[0], "uid"]
     # display event detail
     st.markdown("##### 案情经过")
     # select search_dfnew by id
-    selected_rows_df = search_dfnew[search_dfnew.index == id]
+    # selected_rows_df = search_dfnew[search_dfnew.index == id]
+    selected_rows_df = search_dfnew[search_dfnew["uid"] == uid]
+
+    # display columns
+    # st.text(selected_rows_df.columns)
+    selected_rows_df = selected_rows_df[
+        [
+            "序号",
+            "企业名称",
+            "处罚决定书文号",
+            "违法行为类型",
+            "行政处罚内容",
+            "作出行政处罚决定机关名称",
+            "作出行政处罚决定日期",
+            "备注",
+            "link",
+            "区域",
+            "发布日期",
+            "summary",
+            "amount",
+            "category",
+            "industry",
+        ]
+    ]
+    # rename columns
+    selected_rows_df.columns = [
+        "序号",
+        "企业名称",
+        "处罚决定书文号",
+        "违法行为类型",
+        "行政处罚内容",
+        "作出行政处罚决定机关名称",
+        "作出行政处罚决定日期",
+        "备注",
+        "链接",
+        "区域",
+        "发布日期",
+        "摘要",
+        "罚款金额",
+        "违规类别",
+        "行业",
+    ]
+    # fillna
+    selected_rows_df = selected_rows_df.fillna("")
     # transpose and set column name
     selected_rows_df = selected_rows_df.astype(str).T
 
@@ -1000,7 +1072,7 @@ def display_eventdetail(search_df):
     st.table(selected_rows_df)
 
     # get event detail url
-    url = selected_rows_df.loc["link", "内容"]
+    url = selected_rows_df.loc["链接", "内容"]
     # display url
     st.markdown("##### 案例链接")
     st.markdown(url)
@@ -1461,7 +1533,7 @@ def display_search_df(searchdf):
     df_org_count = df_month.groupby(["区域"]).size().reset_index(name="count")
     # sort by count
     df_org_count = df_org_count.sort_values(by="count", ascending=False)
-    st.write(df_org_count)
+    # st.write(df_org_count)
     org_ls = df_org_count["区域"].tolist()
     count_ls = df_org_count["count"].tolist()
     new_orgls, new_countls = count_by_province(org_ls, count_ls)
@@ -1636,105 +1708,105 @@ def count_by_province(city_ls, count_ls):
     return list(provinces), list(counts)
 
 
-def get_chinese_province(location):
-    if location == "总部":
-        return "北京市"
-    if location == "全国":
-        return "未知省份"
-    if location == "无":
-        return "未知省份"
+# def get_chinese_province(location):
+#     if location == "总部":
+#         return "北京市"
+#     if location == "全国":
+#         return "未知省份"
+#     if location == "无":
+#         return "未知省份"
 
-    return extract_province(location)
-
-
-def get_chinese_province_nominatim(city, country="中国"):
-    geolocator = Nominatim(user_agent="city_to_chinese_province_converter")
-
-    try:
-        # Attempt to geocode the city
-        location = geolocator.geocode(
-            f"{city}, {country}", exactly_one=True, language="zh"
-        )
-
-        if location:
-            # Reverse geocode to get detailed address information in Chinese
-            address = geolocator.reverse(
-                f"{location.latitude}, {location.longitude}", language="zh"
-            ).raw["address"]
-
-            # Extract the province information
-            province = address.get("state", "")
-
-            # If no state/province is found, try other potential fields
-            if not province:
-                province = address.get("province", "")
-            if not province:
-                province = address.get("region", "")
-
-            return province if province else "省份未找到"
-        else:
-            return "城市未找到"
-
-    except (GeocoderTimedOut, GeocoderUnavailable):
-        print("地理编码服务超时或不可用。请稍后再试。")
-        return "未知省份"
+#     return extract_province(location)
 
 
-def extract_province(location_string):
-    # Dictionary of provinces and autonomous regions with their common abbreviations
-    province_dict = {
-        "北京": "北京市",
-        "天津": "天津市",
-        "河北": "河北省",
-        "山西": "山西省",
-        "内蒙古": "内蒙古自治区",
-        "辽宁": "辽宁省",
-        "吉林": "吉林省",
-        "黑龙江": "黑龙江省",
-        "上海": "上海市",
-        "江苏": "江苏省",
-        "浙江": "浙江省",
-        "安徽": "安徽省",
-        "福建": "福建省",
-        "江西": "江西省",
-        "山东": "山东省",
-        "河南": "河南省",
-        "湖北": "湖北省",
-        "湖南": "湖南省",
-        "广东": "广东省",
-        "广西": "广西壮族自治区",
-        "海南": "海南省",
-        "重庆": "重庆市",
-        "四川": "四川省",
-        "贵州": "贵州省",
-        "云南": "云南省",
-        "西藏": "西藏自治区",
-        "陕西": "陕西省",
-        "甘肃": "甘肃省",
-        "青海": "青海省",
-        "宁夏": "宁夏回族自治区",
-        "新疆": "新疆维吾尔自治区",
-    }
+# def get_chinese_province_nominatim(city, country="中国"):
+#     geolocator = Nominatim(user_agent="city_to_chinese_province_converter")
 
-    # Check for direct matches or matches with common abbreviations
-    for key, value in province_dict.items():
-        if location_string.startswith(key):
-            return value
+#     try:
+#         # Attempt to geocode the city
+#         location = geolocator.geocode(
+#             f"{city}, {country}", exactly_one=True, language="zh"
+#         )
 
-    # Handle autonomous prefectures and cities
-    parts = re.split(r"(自治州|地区|市)", location_string)
-    if len(parts) > 1:
-        potential_province = parts[0]
-        for key, value in province_dict.items():
-            if potential_province.startswith(key):
-                return value
+#         if location:
+#             # Reverse geocode to get detailed address information in Chinese
+#             address = geolocator.reverse(
+#                 f"{location.latitude}, {location.longitude}", language="zh"
+#             ).raw["address"]
 
-    # If no match found, try to extract using Nominatim
-    province = get_chinese_province_nominatim(location_string)
-    if province:
-        return province
+#             # Extract the province information
+#             province = address.get("state", "")
 
-    return "未知省份"
+#             # If no state/province is found, try other potential fields
+#             if not province:
+#                 province = address.get("province", "")
+#             if not province:
+#                 province = address.get("region", "")
+
+#             return province if province else "省份未找到"
+#         else:
+#             return "城市未找到"
+
+#     except (GeocoderTimedOut, GeocoderUnavailable):
+#         print("地理编码服务超时或不可用。请稍后再试。")
+#         return "未知省份"
+
+
+# def extract_province(location_string):
+#     # Dictionary of provinces and autonomous regions with their common abbreviations
+#     province_dict = {
+#         "北京": "北京市",
+#         "天津": "天津市",
+#         "河北": "河北省",
+#         "山西": "山西省",
+#         "内蒙古": "内蒙古自治区",
+#         "辽宁": "辽宁省",
+#         "吉林": "吉林省",
+#         "黑龙江": "黑龙江省",
+#         "上海": "上海市",
+#         "江苏": "江苏省",
+#         "浙江": "浙江省",
+#         "安徽": "安徽省",
+#         "福建": "福建省",
+#         "江西": "江西省",
+#         "山东": "山东省",
+#         "河南": "河南省",
+#         "湖北": "湖北省",
+#         "湖南": "湖南省",
+#         "广东": "广东省",
+#         "广西": "广西壮族自治区",
+#         "海南": "海南省",
+#         "重庆": "重庆市",
+#         "四川": "四川省",
+#         "贵州": "贵州省",
+#         "云南": "云南省",
+#         "西藏": "西藏自治区",
+#         "陕西": "陕西省",
+#         "甘肃": "甘肃省",
+#         "青海": "青海省",
+#         "宁夏": "宁夏回族自治区",
+#         "新疆": "新疆维吾尔自治区",
+#     }
+
+#     # Check for direct matches or matches with common abbreviations
+#     for key, value in province_dict.items():
+#         if location_string.startswith(key):
+#             return value
+
+#     # Handle autonomous prefectures and cities
+#     parts = re.split(r"(自治州|地区|市)", location_string)
+#     if len(parts) > 1:
+#         potential_province = parts[0]
+#         for key, value in province_dict.items():
+#             if potential_province.startswith(key):
+#                 return value
+
+#     # If no match found, try to extract using Nominatim
+#     province = get_chinese_province_nominatim(location_string)
+#     if province:
+#         return province
+
+#     return "未知省份"
 
 
 def get_pboccat():
@@ -1760,3 +1832,45 @@ def sum_amount_by_month(df):
     df_month_sum = df1.groupby(["month"])["amount"].sum().reset_index(name="sum")
     df_sigle_penalty = df1[["month", "amount"]]
     return df_month_sum, df_sigle_penalty
+
+
+def update_pboclabel():
+    # get cbirc detail
+    newdf = get_pbocdetail("")
+
+    # get id list
+    newidls = newdf["link"].tolist()
+
+    # get amount details
+    amtdf = get_pboccat()
+
+    # get splitdf
+    # splitdf = get_cbircanalysis("")
+
+    # if amtdf is not empty
+    if amtdf.empty:
+        amtoldidls = []
+    else:
+        amtoldidls = amtdf["id"].tolist()
+    # get new idls not in oldidls
+    amtupdidls = [x for x in newidls if x not in amtoldidls]
+
+    amtupddf = newdf[newdf["link"].isin(amtupdidls)]
+    # reset index
+    amtupddf.reset_index(drop=True, inplace=True)
+    # display newdf
+    st.markdown("### 待更新分类数据")
+    st.write(amtupddf)
+    # if newdf is not empty, save it
+    if amtupddf.empty is False:
+        updlen = len(amtupddf)
+        st.info("待更新分类" + str(updlen) + "条数据")
+        savename = "pboc_tocat" + get_now() + ".csv"
+        # download detail data
+        st.download_button(
+            "下载分类案例数据",
+            data=amtupddf.to_csv().encode("utf_8_sig"),
+            file_name=savename,
+        )
+    else:
+        st.info("无待更新分类数据")

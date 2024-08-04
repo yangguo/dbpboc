@@ -1,3 +1,12 @@
 opencv-python-headless
 img2pdf
 pdf2image
+streamlit
+plotly
+python-dotenv
+pdfplumber
+pymongo
+python-docx
+pytesseract
+selenium
+webdriver-manager
