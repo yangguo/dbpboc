@@ -1,3 +1,4 @@
+# Standard library imports
 import csv
 import glob
 import os
@@ -6,11 +7,15 @@ import re
 import time
 from ast import literal_eval
 from urllib.parse import unquote
-import plotly.express as px
 import json
+
+# Third-party imports
+import plotly.express as px
 import pandas as pd
 import pdfplumber
 import streamlit as st
+
+# Local imports
 from database import delete_data, get_collection, get_data, get_size, insert_data
 from doc2text import pdfurl2tableocr
 from selenium.webdriver.common.by import By
@@ -946,6 +951,9 @@ def download_pbocsum():
     # get unique link number
     linkno = alldtl["link"].nunique()
     st.write("链接数: " + str(linkno))
+    # get unique uid
+    idno = alldtl["uid"].nunique()
+    st.write("uid数: " + str(idno))
     # get min and max date
     mindate = alldtl["date"].min()
     maxdate = alldtl["date"].max()
@@ -965,8 +973,8 @@ def download_pbocsum():
     # get length of catdf
     lencat = len(catdf)
     st.write("分类数据量: " + str(lencat))
-    # get unique id number
-    idno = catdf["id"].nunique()
+    # get unique uid number
+    idno = catdf["uid"].nunique()
     st.write("分类id数: " + str(idno))
 
     catname = "pboccat" + get_now() + ".csv"
@@ -1839,7 +1847,7 @@ def update_pboclabel():
     newdf = get_pbocdetail("")
 
     # get id list
-    newidls = newdf["link"].tolist()
+    newidls = newdf["uid"].tolist()
 
     # get amount details
     amtdf = get_pboccat()
@@ -1851,11 +1859,11 @@ def update_pboclabel():
     if amtdf.empty:
         amtoldidls = []
     else:
-        amtoldidls = amtdf["id"].tolist()
+        amtoldidls = amtdf["uid"].tolist()
     # get new idls not in oldidls
     amtupdidls = [x for x in newidls if x not in amtoldidls]
 
-    amtupddf = newdf[newdf["link"].isin(amtupdidls)]
+    amtupddf = newdf[newdf["uid"].isin(amtupdidls)]
     # reset index
     amtupddf.reset_index(drop=True, inplace=True)
     # display newdf
