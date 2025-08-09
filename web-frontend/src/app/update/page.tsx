@@ -30,6 +30,21 @@ interface UpdateStatus {
   newCases: number
 }
 
+interface OrgStats {
+  summary_stats: {
+    total_cases: number;
+    link_count: number;
+    min_date: string | null;
+    max_date: string | null;
+  };
+  detail_stats: {
+    total_cases: number;
+    link_count: number;
+    min_date: string | null;
+    max_date: string | null;
+  };
+}
+
 export default function UpdatePage() {
   const [selectedOrgs, setSelectedOrgs] = useState<string[]>([])
   const [showPendingOnly, setShowPendingOnly] = useState(false)
@@ -38,6 +53,7 @@ export default function UpdatePage() {
   const [isUpdating, setIsUpdating] = useState(false)
   const [updateStatuses, setUpdateStatuses] = useState<UpdateStatus[]>([])
   const [pendingOrgs, setPendingOrgs] = useState<string[]>([])
+  const [orgStats, setOrgStats] = useState<Record<string, OrgStats>>({});
 
   // 获取待更新机构列表
   const fetchPendingOrgs = async () => {
@@ -55,6 +71,26 @@ export default function UpdatePage() {
   useEffect(() => {
     fetchPendingOrgs()
   }, [])
+
+  useEffect(() => {
+    const fetchOrgStats = async (orgName: string) => {
+      try {
+        const response = await fetch(`/api/v1/stats/${orgName}`);
+        if (response.ok) {
+          const data = await response.json();
+          setOrgStats(prev => ({ ...prev, [orgName]: data }));
+        }
+      } catch (error) {
+        console.error(`获取机构 ${orgName} 统计失败:`, error);
+      }
+    };
+
+    selectedOrgs.forEach(org => {
+      if (!orgStats[org]) {
+        fetchOrgStats(org);
+      }
+    });
+  }, [selectedOrgs, orgStats]);
 
   // 处理机构选择
   const handleOrgSelection = (org: string, checked: boolean) => {
@@ -258,9 +294,9 @@ export default function UpdatePage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 左侧控制面板 */}
-        <div className="lg:col-span-1 space-y-6">
+      <div className="space-y-6">
+        {/* Top control panel */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* 机构选择 */}
           <Card>
             <CardHeader>
@@ -314,13 +350,23 @@ export default function UpdatePage() {
 
               <div className="max-h-60 overflow-y-auto space-y-2">
                 {displayOrgs.map((org) => (
-                  <div key={org} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={org}
-                      checked={selectedOrgs.includes(org)}
-                      onCheckedChange={(checked) => handleOrgSelection(org, checked as boolean)}
-                    />
-                    <Label htmlFor={org} className="text-sm">{org}</Label>
+                  <div key={org}>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id={org}
+                        checked={selectedOrgs.includes(org)}
+                        onCheckedChange={(checked) => handleOrgSelection(org, checked as boolean)}
+                      />
+                      <Label htmlFor={org} className="text-sm font-medium">{org}</Label>
+                    </div>
+                    {selectedOrgs.includes(org) && orgStats[org] && (
+                      <div className="ml-6 text-xs text-muted-foreground space-y-1 mt-1">
+                        <p>列表: {orgStats[org].summary_stats.total_cases} | 链接: {orgStats[org].summary_stats.link_count}</p>
+                        <p>列表日期: {orgStats[org].summary_stats.min_date} ~ {orgStats[org].summary_stats.max_date}</p>
+                        <p>详情: {orgStats[org].detail_stats.total_cases} | 链接: {orgStats[org].detail_stats.link_count}</p>
+                        <p>详情日期: {orgStats[org].detail_stats.min_date} ~ {orgStats[org].detail_stats.max_date}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -396,8 +442,8 @@ export default function UpdatePage() {
           </Card>
         </div>
 
-        {/* 右侧更新状态 */}
-        <div className="lg:col-span-2">
+        {/* 更新状态 */}
+        <div>
           <Card>
             <CardHeader>
               <CardTitle>更新状态</CardTitle>
