@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 from bson import ObjectId
@@ -6,7 +6,7 @@ from .case import PyObjectId
 
 class UserBase(BaseModel):
     username: str = Field(..., description="Username")
-    email: EmailStr = Field(..., description="Email address")
+    email: str = Field(..., description="Email address")
     full_name: Optional[str] = Field(None, description="Full name")
     is_active: bool = Field(default=True, description="Is user active")
     is_superuser: bool = Field(default=False, description="Is superuser")
@@ -17,7 +17,7 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     username: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     full_name: Optional[str] = None
     password: Optional[str] = Field(None, min_length=8)
     is_active: Optional[bool] = None
@@ -31,10 +31,11 @@ class UserInDB(UserBase):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     last_login: Optional[datetime] = None
     
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+        json_encoders={ObjectId: str},
+    )
 
 class User(UserBase):
     id: PyObjectId = Field(alias="_id")
@@ -42,10 +43,11 @@ class User(UserBase):
     updated_at: datetime
     last_login: Optional[datetime] = None
     
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+        json_encoders={ObjectId: str},
+    )
 
 class UserLogin(BaseModel):
     username: str

@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
 import { RefreshCw, Download, FileText, Building2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { MainLayout } from '@/components/layout/main-layout'
 
 // 城市列表 - 从原始应用复制
 const cityList = [
@@ -238,7 +239,8 @@ export default function UpdatePage() {
   const displayOrgs = showPendingOnly ? pendingOrgs : cityList
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <MainLayout>
+      <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">案例更新</h1>
@@ -445,6 +447,7 @@ export default function UpdatePage() {
           </Card>
         </div>
       </div>
-    </div>
+      </div>
+    </MainLayout>
   )
 }

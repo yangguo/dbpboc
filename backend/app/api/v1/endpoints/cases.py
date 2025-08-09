@@ -1,10 +1,8 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, HTTPException, status, Query
 from app.models.case import Case, CaseCreate, CaseUpdate, CaseSearchParams, CaseResponse
-from app.models.user import User
 from app.services.case_service import CaseService
 from app.core.database import get_database
-from .auth import get_current_active_user
 from bson import ObjectId
 
 router = APIRouter()
@@ -12,13 +10,12 @@ router = APIRouter()
 @router.post("/", response_model=Case)
 async def create_case(
     case_data: CaseCreate,
-    current_user: User = Depends(get_current_active_user)
 ):
     """Create a new case"""
     db = await get_database()
     case_service = CaseService(db)
     
-    case = await case_service.create_case(case_data, current_user.username)
+    case = await case_service.create_case(case_data, created_by="system")
     return case
 
 @router.get("/", response_model=CaseResponse)
@@ -31,7 +28,6 @@ async def search_cases(
     status: str = Query(None, description="Status filter"),
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(20, ge=1, le=100, description="Page size"),
-    current_user: User = Depends(get_current_active_user)
 ):
     """Search and filter cases"""
     db = await get_database()
@@ -54,7 +50,6 @@ async def search_cases(
 @router.get("/{case_id}", response_model=Case)
 async def get_case(
     case_id: str,
-    current_user: User = Depends(get_current_active_user)
 ):
     """Get a specific case by ID"""
     if not ObjectId.is_valid(case_id):
@@ -79,7 +74,6 @@ async def get_case(
 async def update_case(
     case_id: str,
     case_update: CaseUpdate,
-    current_user: User = Depends(get_current_active_user)
 ):
     """Update a case"""
     if not ObjectId.is_valid(case_id):
@@ -103,7 +97,6 @@ async def update_case(
 @router.delete("/{case_id}")
 async def delete_case(
     case_id: str,
-    current_user: User = Depends(get_current_active_user)
 ):
     """Delete a case"""
     if not ObjectId.is_valid(case_id):
@@ -125,9 +118,7 @@ async def delete_case(
     return {"message": "Case deleted successfully"}
 
 @router.get("/stats/overview")
-async def get_case_statistics(
-    current_user: User = Depends(get_current_active_user)
-):
+async def get_case_statistics():
     """Get case statistics for dashboard"""
     db = await get_database()
     case_service = CaseService(db)
@@ -143,7 +134,6 @@ async def export_cases_csv(
     city: str = Query(None, description="City filter"),
     case_type: str = Query(None, description="Case type filter"),
     status: str = Query(None, description="Status filter"),
-    current_user: User = Depends(get_current_active_user)
 ):
     """Export filtered cases to CSV"""
     db = await get_database()

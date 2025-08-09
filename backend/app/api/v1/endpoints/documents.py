@@ -1,11 +1,9 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from app.models.document import Document, DocumentUpdate, DocumentResponse, DocumentUploadResponse
-from app.models.user import User
 from app.services.document_service import DocumentService
 from app.core.database import get_database
-from .auth import get_current_active_user
 from bson import ObjectId
 import os
 
@@ -16,7 +14,6 @@ async def upload_document(
     file: UploadFile = File(...),
     document_type: str = Form(...),
     case_id: str = Form(None),
-    current_user: User = Depends(get_current_active_user)
 ):
     """Upload a document"""
     if case_id and not ObjectId.is_valid(case_id):
@@ -33,7 +30,7 @@ async def upload_document(
             file=file,
             document_type=document_type,
             case_id=case_id,
-            uploaded_by=current_user.username
+            uploaded_by="system"
         )
         
         return DocumentUploadResponse(
@@ -61,7 +58,6 @@ async def list_documents(
     processing_status: str = None,
     page: int = 1,
     size: int = 20,
-    current_user: User = Depends(get_current_active_user)
 ):
     """List documents with optional filters"""
     if case_id and not ObjectId.is_valid(case_id):
@@ -103,7 +99,6 @@ async def list_documents(
 @router.get("/{document_id}", response_model=DocumentResponse)
 async def get_document(
     document_id: str,
-    current_user: User = Depends(get_current_active_user)
 ):
     """Get document details"""
     if not ObjectId.is_valid(document_id):
@@ -141,7 +136,6 @@ async def get_document(
 @router.get("/{document_id}/download")
 async def download_document(
     document_id: str,
-    current_user: User = Depends(get_current_active_user)
 ):
     """Download document file"""
     if not ObjectId.is_valid(document_id):
@@ -176,7 +170,6 @@ async def download_document(
 async def update_document(
     document_id: str,
     document_update: DocumentUpdate,
-    current_user: User = Depends(get_current_active_user)
 ):
     """Update document metadata"""
     if not ObjectId.is_valid(document_id):
@@ -214,7 +207,6 @@ async def update_document(
 @router.delete("/{document_id}")
 async def delete_document(
     document_id: str,
-    current_user: User = Depends(get_current_active_user)
 ):
     """Delete a document"""
     if not ObjectId.is_valid(document_id):
@@ -238,7 +230,6 @@ async def delete_document(
 @router.post("/{document_id}/process")
 async def process_document(
     document_id: str,
-    current_user: User = Depends(get_current_active_user)
 ):
     """Trigger document processing (OCR, text extraction)"""
     if not ObjectId.is_valid(document_id):

@@ -14,7 +14,7 @@ class UserService:
         """Create a new user"""
         hashed_password = get_password_hash(user_data.password)
         
-        user_dict = user_data.dict(exclude={"password"})
+        user_dict = user_data.model_dump(exclude={"password"})
         user_dict["hashed_password"] = hashed_password
         user_dict["created_at"] = datetime.utcnow()
         user_dict["updated_at"] = datetime.utcnow()

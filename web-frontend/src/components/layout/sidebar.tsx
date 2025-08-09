@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   Search,
   FileText,
-  Users,
   Settings,
   Menu,
   X,
@@ -48,11 +47,6 @@ const navigation = [
     name: "数据分析",
     href: "/analytics",
     icon: BarChart3,
-  },
-  {
-    name: "用户管理",
-    href: "/users",
-    icon: Users,
   },
   {
     name: "设置",

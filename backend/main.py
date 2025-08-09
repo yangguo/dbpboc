@@ -10,9 +10,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
-@app.on_event("startup")
-async def startup_event():
-    await connect_to_mongo()
+# @app.on_event("startup")
+# async def startup_event():
+#     await connect_to_mongo()
 
 @app.on_event("shutdown")
 async def shutdown_event():
