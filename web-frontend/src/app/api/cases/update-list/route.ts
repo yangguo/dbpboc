@@ -1,24 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { config } from '@/lib/config'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { orgName, startPage, endPage } = body
-    
-    // TODO: Implement actual case list update logic
-    // This is a placeholder that simulates updating case lists
-    console.log(`Updating case list for ${orgName}, pages ${startPage}-${endPage}`)
-    
-    // Simulate processing time
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Return mock response
-    return NextResponse.json({
-      success: true,
-      orgName,
-      newCases: Math.floor(Math.random() * 50) + 1, // Mock random number of new cases
-      message: `Case list updated for ${orgName}`
+
+    if (!orgName || !startPage || !endPage) {
+      return NextResponse.json(
+        { error: 'Missing orgName, startPage or endPage' },
+        { status: 400 }
+      )
+    }
+
+    const resp = await fetch(`${config.backendUrl}/api/v1/cases/update-list`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orgName, startPage, endPage })
     })
+
+    if (!resp.ok) {
+      const text = await resp.text()
+      throw new Error(`Backend error ${resp.status}: ${text}`)
+    }
+
+    const data = await resp.json()
+    return NextResponse.json(data)
   } catch (error) {
     console.error('Error updating case list:', error)
     return NextResponse.json(

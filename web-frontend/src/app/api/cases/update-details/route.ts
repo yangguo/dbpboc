@@ -1,24 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { config } from '@/lib/config'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { orgName } = body
-    
-    // TODO: Implement actual case details update logic
-    // This is a placeholder that simulates updating case details
-    console.log(`Updating case details for ${orgName}`)
-    
-    // Simulate processing time
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    // Return mock response
-    return NextResponse.json({
-      success: true,
-      orgName,
-      updatedCases: Math.floor(Math.random() * 30) + 1, // Mock random number of updated cases
-      message: `Case details updated for ${orgName}`
+
+    if (!orgName) {
+      return NextResponse.json({ error: 'Missing orgName' }, { status: 400 })
+    }
+
+    const resp = await fetch(`${config.backendUrl}/api/v1/cases/update-details`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orgName })
     })
+
+    if (!resp.ok) {
+      const text = await resp.text()
+      throw new Error(`Backend error ${resp.status}: ${text}`)
+    }
+
+    const data = await resp.json()
+    return NextResponse.json(data)
   } catch (error) {
     console.error('Error updating case details:', error)
     return NextResponse.json(

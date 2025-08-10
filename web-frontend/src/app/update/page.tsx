@@ -131,58 +131,75 @@ export default function UpdatePage() {
     try {
       for (let i = 0; i < selectedOrgs.length; i++) {
         const orgName = selectedOrgs[i]
-        
-        // 更新状态为正在更新
+
         setUpdateStatuses(prev => prev.map(status => 
           status.orgName === orgName 
-            ? { ...status, status: 'updating', message: '正在获取案例列表...' }
+            ? { ...status, status: 'updating', message: '正在获取案例列表...', progress: 10 }
             : status
         ))
 
-        try {
-          const response = await fetch('/api/cases/update-list', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              orgName,
-              startPage,
-              endPage
-            })
-          })
+        let totalNew = 0
+        let curStart = startPage
+        let curEnd = endPage
+        let loops = 0
+        const maxLoops = 50
 
-          if (response.ok) {
+        while (loops < maxLoops) {
+          try {
+            const response = await fetch('/api/cases/update-list', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ orgName, startPage: curStart, endPage: curEnd })
+            })
+
+            if (!response.ok) throw new Error('更新失败')
+
             const data = await response.json()
+            totalNew += Number(data?.newCases || 0)
+
             setUpdateStatuses(prev => prev.map(status => 
               status.orgName === orgName 
                 ? { 
                     ...status, 
-                    status: 'completed', 
-                    progress: 100,
-                    message: `更新完成，获取 ${data.newCases} 条新案例`,
-                    newCases: data.newCases
+                    status: 'updating', 
+                    progress: Math.min(90, status.progress + 10),
+                    message: `已获取 ${totalNew} 条新案例，继续翻页...`
                   }
                 : status
             ))
-          } else {
-            throw new Error('更新失败')
+
+            if (!data?.newCases || data.newCases === 0) {
+              break
+            }
+
+            // 下一页
+            curStart = curEnd + 1
+            curEnd = curEnd + 1
+            loops += 1
+          } catch (err) {
+            setUpdateStatuses(prev => prev.map(status => 
+              status.orgName === orgName 
+                ? { ...status, status: 'error', progress: 0, message: '更新失败', newCases: totalNew }
+                : status
+            ))
+            break
           }
-        } catch (error) {
-          setUpdateStatuses(prev => prev.map(status => 
-            status.orgName === orgName 
-              ? { 
-                  ...status, 
-                  status: 'error', 
-                  progress: 0,
-                  message: '更新失败',
-                  newCases: 0
-                }
-              : status
-          ))
         }
+
+        // 完成当前机构
+        setUpdateStatuses(prev => prev.map(status => 
+          status.orgName === orgName 
+            ? { 
+                ...status, 
+                status: 'completed', 
+                progress: 100,
+                message: `更新完成，共获取 ${totalNew} 条新案例`,
+                newCases: totalNew
+              }
+            : status
+        ))
       }
-      
+
       toast.success('案例列表更新完成')
     } finally {
       setIsUpdating(false)
