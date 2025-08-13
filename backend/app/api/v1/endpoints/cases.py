@@ -47,8 +47,8 @@ org2url = {
     "天津": "http://tianjin.pbc.gov.cn/fzhtianjin/113682/113700/113707/10983/index",
     "重庆": "http://chongqing.pbc.gov.cn/chongqing/107680/107897/107909/5525107/8e9dfeba/index",
     "上海": "http://shanghai.pbc.gov.cn/fzhshanghai/113577/114832/114918/14681/index",
-    "兰州": "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/12820/index",
-    "拉萨": "http://lasa.pbc.gov.cn/lasa/120480/120504/120511/18819/index",
+    "兰州": "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518435/9ad499ab/index",
+    "拉萨": "http://lasa.pbc.gov.cn/lasa/120480/120504/120511/5517088/4dd6bf7e/index",
     "西宁": "http://xining.pbc.gov.cn/xining/118239/118263/118270/13228/index",
     "乌鲁木齐": "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/14752/index",
     "南宁": "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/19833/index",
@@ -146,14 +146,14 @@ def get_sumeventdf(orgname: str, start: int, end: int):
                     linkls.append(ls3[j].get_attribute("href"))
                     sumls.append("")
             else:
-                ls1 = browser.find_elements(By.XPATH, '\\td[@class=\\"hei12jj\\"]')
+                ls1 = browser.find_elements(By.XPATH, '//td[@class="hei12jj"]')
                 total = len(ls1) // 3
                 for j in range(total):
                     namels.append(ls1[j * 3].text)
                     datels.append(ls1[j * 3 + 1].text)
                     sumls.append(ls1[j * 3 + 2].text)
 
-                ls2 = browser.find_elements(By.XPATH, '\\font[@class=\\"hei12\\"]/a')
+                ls2 = browser.find_elements(By.XPATH, '//font[@class="hei12"]/a')
                 for link in ls2:
                     linkls.append(link.get_attribute("href"))
 

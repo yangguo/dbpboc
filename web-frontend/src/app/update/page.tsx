@@ -139,43 +139,38 @@ export default function UpdatePage() {
         ))
 
         let totalNew = 0
-        let curStart = startPage
-        let curEnd = endPage
-        let loops = 0
-        const maxLoops = 50
+        let currentPage = startPage
+        const totalPages = endPage - startPage + 1
+        let processedPages = 0
 
-        while (loops < maxLoops) {
+        while (currentPage <= endPage) {
           try {
             const response = await fetch('/api/cases/update-list', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ orgName, startPage: curStart, endPage: curEnd })
+              body: JSON.stringify({ orgName, startPage: currentPage, endPage: currentPage })
             })
 
             if (!response.ok) throw new Error('更新失败')
 
             const data = await response.json()
             totalNew += Number(data?.newCases || 0)
+            processedPages += 1
 
+            const progress = Math.min(90, 10 + (processedPages / totalPages) * 80)
             setUpdateStatuses(prev => prev.map(status => 
               status.orgName === orgName 
                 ? { 
                     ...status, 
                     status: 'updating', 
-                    progress: Math.min(90, status.progress + 10),
-                    message: `已获取 ${totalNew} 条新案例，继续翻页...`
+                    progress: progress,
+                    message: `正在处理第 ${currentPage} 页，已获取 ${totalNew} 条新案例...`
                   }
                 : status
             ))
 
-            if (!data?.newCases || data.newCases === 0) {
-              break
-            }
-
-            // 下一页
-            curStart = curEnd + 1
-            curEnd = curEnd + 1
-            loops += 1
+            // 移动到下一页
+            currentPage += 1
           } catch (err) {
             setUpdateStatuses(prev => prev.map(status => 
               status.orgName === orgName 
