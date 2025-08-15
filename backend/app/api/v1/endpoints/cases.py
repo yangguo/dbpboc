@@ -44,43 +44,69 @@ org2name = {
 }
 
 org2url = {
-    "天津": "http://tianjin.pbc.gov.cn/fzhtianjin/113682/113700/113707/10983/index",
-    "重庆": "http://chongqing.pbc.gov.cn/chongqing/107680/107897/107909/5525107/8e9dfeba/index",
-    "上海": "http://shanghai.pbc.gov.cn/fzhshanghai/113577/114832/114918/14681/index",
-    "兰州": "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518435/9ad499ab/index",
-    "拉萨": "http://lasa.pbc.gov.cn/lasa/120480/120504/120511/5517088/4dd6bf7e/index",
-    "西宁": "http://xining.pbc.gov.cn/xining/118239/118263/118270/13228/index",
-    "乌鲁木齐": "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/14752/index",
-    "南宁": "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/19833/index",
-    "贵阳": "http://guiyang.pbc.gov.cn/guiyang/113288/113306/113313/10855/index",
-    "福州": "http://fuzhou.pbc.gov.cn/fuzhou/126805/126823/126830/17179/index",
-    "成都": "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/18154/index",
-    "呼和浩特": "http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/23932/index",
-    "郑州": "http://zhengzhou.pbc.gov.cn/zhengzhou/124182/124200/124207/18390/index",
-    "北京": "http://beijing.pbc.gov.cn/beijing/132030/132052/132059/19192/index",
-    "合肥": "http://hefei.pbc.gov.cn/hefei/122364/122382/122389/14535/index",
-    "厦门": "http://xiamen.pbc.gov.cn/xiamen/127703/127721/127728/18534/index",
-    "海口": "http://haikou.pbc.gov.cn/haikou/132982/133000/133007/19966/index",
-    "大连": "http://dalian.pbc.gov.cn/dalian/123812/123830/123837/16262/index",
-    "广州": "http://guangzhou.pbc.gov.cn/guangzhou/129142/129159/129166/20713/index",
-    "太原": "http://taiyuan.pbc.gov.cn/taiyuan/133960/133981/133988/20320/index",
-    "石家庄": "http://shijiazhuang.pbc.gov.cn/shijiazhuang/131442/131463/131472/20016/index",
-    "总部": "http://www.pbc.gov.cn/zhengwugongkai/4081330/4081344/4081407/4081705/d80f41dc/index",
-    "昆明": "http://kunming.pbc.gov.cn/kunming/133736/133760/133767/20429/index",
-    "青岛": "http://qingdao.pbc.gov.cn/qingdao/126166/126184/126191/16720/index",
-    "沈阳": "http://shenyang.pbc.gov.cn/shenyfh/108074/108127/108208/8267/index",
-    "长沙": "http://changsha.pbc.gov.cn/changsha/130011/130029/130036/18625/index",
-    "深圳": "http://shenzhen.pbc.gov.cn/shenzhen/122811/122833/122840/15142/index",
-    "武汉": "http://wuhan.pbc.gov.cn/wuhan/123472/123493/123502/16682/index",
-    "银川": "http://yinchuan.pbc.gov.cn/yinchuan/119983/120001/120008/14095/index",
-    "西安": "http://xian.pbc.gov.cn/xian/129428/129449/129458/23967/index",
-    "哈尔滨": "http://haerbin.pbc.gov.cn/haerbin/112693/112776/112783/11181/index",
-    "长春": "http://changchun.pbc.gov.cn/changchun/124680/124698/124705/16071/index",
-    "宁波": "http://ningbo.pbc.gov.cn/ningbo/127076/127098/127105/17279/index",
-    "杭州": "http://hangzhou.pbc.gov.cn/hangzhou/125268/125286/125293/16349/index",
-    "南京": "http://nanjing.pbc.gov.cn/nanjing/117542/117560/117567/12561/index",
-    "济南": "http://jinan.pbc.gov.cn/jinan/120967/120985/120994/13768/index",
-    "南昌": "http://nanchang.pbc.gov.cn/nanchang/132372/132390/132397/19361/index",
+    "天津": ["http://tianjin.pbc.gov.cn/fzhtianjin/113682/113700/113707/10983/index"],
+    "重庆": [
+        "http://chongqing.pbc.gov.cn/chongqing/107680/107897/107909/5525107/8e9dfeba/index",
+        "http://chongqing.pbc.gov.cn/chongqing/107680/107897/107909/5525110/a80d7c9f/index",
+        "http://chongqing.pbc.gov.cn/chongqing/107680/107897/107909/5525116/d8af7e38/index",
+        "http://chongqing.pbc.gov.cn/chongqing/107680/107897/107909/5525119/ab0a6a17/index",
+        "http://chongqing.pbc.gov.cn/chongqing/107680/107897/107909/5525122/9a53044d/index",
+        "http://chongqing.pbc.gov.cn/chongqing/107680/107897/107909/5525131/fdda36db/index"
+    ],
+    "上海": ["http://shanghai.pbc.gov.cn/fzhshanghai/113577/114832/114918/14681/index"],
+    "兰州": ["http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518435/9ad499ab/index",
+    "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518438/9d8fbe95/index",
+    "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518441/c80bc350/index",
+    "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518444/01164982/index",
+    "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518447/6b84ac80/index",
+    "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518450/0042cbfc/index",
+    "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518453/641fdd3f/index",
+    "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518456/b926b224/index",
+    "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518459/239eb987/index",
+    "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518462/1d54853f/index",
+    "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518465/fd8c289f/index",
+    "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518468/6c6a5071/index",
+    "http://lanzhou.pbc.gov.cn/lanzhou/117067/117091/117098/5518471/13a5248d/index"
+    ],
+    "拉萨": ["http://lasa.pbc.gov.cn/lasa/120480/120504/120511/5517088/4dd6bf7e/index",
+    "http://lasa.pbc.gov.cn/lasa/120480/120504/120511/5517091/e7989da9/index",
+    "http://lasa.pbc.gov.cn/lasa/120480/120504/120511/5517094/e15e7bd5/index",
+    "http://lasa.pbc.gov.cn/lasa/120480/120504/120511/5517100/152d5f3b/index",
+    "http://lasa.pbc.gov.cn/lasa/120480/120504/120511/5517103/639acb73/index",
+    "http://lasa.pbc.gov.cn/lasa/120480/120504/120511/5517106/69ba3ad4/index"       
+    ],
+    "西宁": ["http://xining.pbc.gov.cn/xining/118239/118263/118270/5513655/7d649fee/index"],
+    "乌鲁木齐": ["http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/14752/index"],
+    "南宁": ["http://nanning.pbc.gov.cn/nanning/133346/133364/133371/19833/index"],
+    "贵阳": ["http://guiyang.pbc.gov.cn/guiyang/113288/113306/113313/10855/index"],
+    "福州": ["http://fuzhou.pbc.gov.cn/fuzhou/126805/126823/126830/17179/index"],
+    "成都": ["http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/18154/index"],
+    "呼和浩特": ["http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/23932/index"],
+    "郑州": ["http://zhengzhou.pbc.gov.cn/zhengzhou/124182/124200/124207/18390/index"],
+    "北京": ["http://beijing.pbc.gov.cn/beijing/132030/132052/132059/19192/index"],
+    "合肥": ["http://hefei.pbc.gov.cn/hefei/122364/122382/122389/14535/index"],
+    "厦门": ["http://xiamen.pbc.gov.cn/xiamen/127703/127721/127728/18534/index"],
+    "海口": ["http://haikou.pbc.gov.cn/haikou/132982/133000/133007/19966/index"],
+    "大连": ["http://dalian.pbc.gov.cn/dalian/123812/123830/123837/16262/index"],
+    "广州": ["http://guangzhou.pbc.gov.cn/guangzhou/129142/129159/129166/20713/index"],
+    "太原": ["http://taiyuan.pbc.gov.cn/taiyuan/133960/133981/133988/20320/index"],
+    "石家庄": ["http://shijiazhuang.pbc.gov.cn/shijiazhuang/131442/131463/131472/20016/index"],
+    "总部": ["http://www.pbc.gov.cn/zhengwugongkai/4081330/4081344/4081407/4081705/d80f41dc/index"],
+    "昆明": ["http://kunming.pbc.gov.cn/kunming/133736/133760/133767/20429/index"],
+    "青岛": ["http://qingdao.pbc.gov.cn/qingdao/126166/126184/126191/16720/index"],
+    "沈阳": ["http://shenyang.pbc.gov.cn/shenyfh/108074/108127/108208/8267/index"],
+    "长沙": ["http://changsha.pbc.gov.cn/changsha/130011/130029/130036/18625/index"],
+    "深圳": ["http://shenzhen.pbc.gov.cn/shenzhen/122811/122833/122840/15142/index"],
+    "武汉": ["http://wuhan.pbc.gov.cn/wuhan/123472/123493/123502/16682/index"],
+    "银川": ["http://yinchuan.pbc.gov.cn/yinchuan/119983/120001/120008/14095/index"],
+    "西安": ["http://xian.pbc.gov.cn/xian/129428/129449/129458/23967/index"],
+    "哈尔滨": ["http://haerbin.pbc.gov.cn/haerbin/112693/112776/112783/11181/index"],
+    "长春": ["http://changchun.pbc.gov.cn/changchun/124680/124698/124705/16071/index"],
+    "宁波": ["http://ningbo.pbc.gov.cn/ningbo/127076/127098/127105/17279/index"],
+    "杭州": ["http://hangzhou.pbc.gov.cn/hangzhou/125268/125286/125293/16349/index"],
+    "南京": ["http://nanjing.pbc.gov.cn/nanjing/117542/117560/117567/12561/index"],
+    "济南": ["http://jinan.pbc.gov.cn/jinan/120967/120985/120994/13768/index"],
+    "南昌": ["http://nanchang.pbc.gov.cn/nanchang/132372/132390/132397/19361/index"],
 }
 
 PBOC_DATA_PATH = "../pboc"
@@ -126,51 +152,58 @@ def get_sumeventdf(orgname: str, start: int, end: int):
         raise HTTPException(status_code=400, detail="Invalid organization name")
 
     browser = get_chrome_driver(TEMP_PATH)
-    baseurl = org2url.get(orgname)
+    baseurls = org2url.get(orgname)
+    if not baseurls:
+        raise HTTPException(status_code=400, detail="No URLs found for organization")
+    
     resultls = []
 
-    for i in range(start, end + 1):
-        url = f"{baseurl}{i}.html"
-        try:
-            logger.info(f"[update-list] fetching url={url}")
-            browser.get(url)
-            time.sleep(random.randint(2, 5))
-            
-            namels, datels, linkls, sumls = [], [], [], []
-            if org_name_index == "zongbu":
-                ls3 = browser.find_elements(By.XPATH, "//div[2]/ul/li/a")
-                ls4 = browser.find_elements(By.XPATH, "//div[2]/ul/li/span")
-                for j in range(len(ls3)):
-                    namels.append(ls3[j].text)
-                    datels.append(ls4[j].text)
-                    linkls.append(ls3[j].get_attribute("href"))
-                    sumls.append("")
-            else:
-                ls1 = browser.find_elements(By.XPATH, '//td[@class="hei12jj"]')
-                total = len(ls1) // 3
-                for j in range(total):
-                    namels.append(ls1[j * 3].text)
-                    datels.append(ls1[j * 3 + 1].text)
-                    sumls.append(ls1[j * 3 + 2].text)
+    # Process each base URL for the organization
+    for baseurl in baseurls:
+        for i in range(start, end + 1):
+            url = f"{baseurl}{i}.html"
+            try:
+                logger.info(f"[update-list] fetching url={url}")
+                browser.get(url)
+                time.sleep(random.randint(2, 5))
+                
+                namels, datels, linkls, sumls = [], [], [], []
+                if org_name_index == "zongbu":
+                    ls3 = browser.find_elements(By.XPATH, "//div[2]/ul/li/a")
+                    ls4 = browser.find_elements(By.XPATH, "//div[2]/ul/li/span")
+                    for j in range(len(ls3)):
+                        namels.append(ls3[j].text)
+                        datels.append(ls4[j].text)
+                        linkls.append(ls3[j].get_attribute("href"))
+                        sumls.append("")
+                else:
+                    ls1 = browser.find_elements(By.XPATH, '//td[@class="hei12jj"]')
+                    total = len(ls1) // 3
+                    for j in range(total):
+                        namels.append(ls1[j * 3].text)
+                        datels.append(ls1[j * 3 + 1].text)
+                        sumls.append(ls1[j * 3 + 2].text)
 
-                ls2 = browser.find_elements(By.XPATH, '//font[@class="hei12"]/a')
-                for link in ls2:
-                    linkls.append(link.get_attribute("href"))
+                    ls2 = browser.find_elements(By.XPATH, '//font[@class="hei12"]/a')
+                    for link in ls2:
+                        linkls.append(link.get_attribute("href"))
 
-            df = pd.DataFrame({"name": namels, "date": datels, "link": linkls, "sum": sumls})
-            logger.info(
-                f"[update-list] page_ok url={url} items={len(df)} links={len(linkls)}"
-            )
-            resultls.append(df)
-        except Exception as e:
-            logger.info(f"[update-list] page_error url={url} err={e}")
-            continue
+                df = pd.DataFrame({"name": namels, "date": datels, "link": linkls, "sum": sumls})
+                logger.info(
+                    f"[update-list] page_ok url={url} items={len(df)} links={len(linkls)}"
+                )
+                resultls.append(df)
+            except Exception as e:
+                logger.info(f"[update-list] page_error url={url} err={e}")
+                continue
 
     browser.quit()
     if not resultls:
         return pd.DataFrame()
         
     sumdf = pd.concat(resultls)
+    # Remove potential duplicates that might occur across different base URLs
+    sumdf = sumdf.drop_duplicates(subset=['link'], keep='first')
     sumdf["区域"] = orgname
     return sumdf
 
@@ -332,12 +365,14 @@ def update_sumeventdf(currentsum: pd.DataFrame, orgname: str):
     
     currentidls = currentsum["link"].tolist()
     newidls = [x for x in currentidls if x not in oldidls]
-    newdf = currentsum[currentsum["link"].isin(newidls)]
+    # Ensure a proper copy when subsetting to avoid SettingWithCopyWarning
+    newdf = currentsum.loc[currentsum["link"].isin(newidls)].copy()
 
     if not newdf.empty:
         newdf.reset_index(drop=True, inplace=True)
         nowstr = datetime.now().strftime("%Y%m%d%H%M%S")
         savename = f"pbocsum{org_name_index}{nowstr}"
+        # Safe assignment on a guaranteed copy
         newdf["区域"] = orgname
         savedf(newdf, savename)
     return newdf
