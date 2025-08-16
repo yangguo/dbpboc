@@ -17,6 +17,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -76,12 +77,83 @@ org2url = {
     "http://lasa.pbc.gov.cn/lasa/120480/120504/120511/5517106/69ba3ad4/index"       
     ],
     "西宁": ["http://xining.pbc.gov.cn/xining/118239/118263/118270/5513655/7d649fee/index"],
-    "乌鲁木齐": ["http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/14752/index"],
-    "南宁": ["http://nanning.pbc.gov.cn/nanning/133346/133364/133371/19833/index"],
-    "贵阳": ["http://guiyang.pbc.gov.cn/guiyang/113288/113306/113313/10855/index"],
-    "福州": ["http://fuzhou.pbc.gov.cn/fuzhou/126805/126823/126830/17179/index"],
-    "成都": ["http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/18154/index"],
-    "呼和浩特": ["http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/23932/index"],
+    "乌鲁木齐": ["http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/5521433/a539faa1/index",
+    "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/5521318/027eaaf2/index",
+    "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/5521321/6ff301b0/index",
+    "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/5521324/deb2e587/index",
+    "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/5521327/b3249805/index",
+    "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/5521330/cb06555c/index",
+    "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/5521333/3c46ff2e/index",
+    "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/5521339/3a460c9f/index",
+    "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/5521342/93821fb0/index",
+    "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/5521345/2af69c3e/index",
+    "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/5521348/82c72160/index",
+    "http://wulumuqi.pbc.gov.cn/wulumuqi/121755/121777/121784/5521351/e7d32002/index"
+             ],
+    "南宁": ["http://nanning.pbc.gov.cn/nanning/133346/133364/133371/5512959/5b36fc9b/index",
+    "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/5512962/74379cd8/index",
+    "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/5512965/223d2834/index",
+    "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/5512968/89ef24ca/index",
+    "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/5512974/1dd726e7/index",
+    "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/5512977/e674e132/index",
+    "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/5512980/acad6337/index",
+    "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/5512983/3d9cb227/index",
+    "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/5512986/5c80893a/index",
+    "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/5512989/f92034e6/index",
+    "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/5512992/6caf3c5a/index",
+    "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/5512995/758358f2/index",
+    "http://nanning.pbc.gov.cn/nanning/133346/133364/133371/5512998/bea4adff/index"
+           ],
+    "贵阳": ["http://guiyang.pbc.gov.cn/guiyang/113288/113306/113313/5503826/936879d6/index",
+    "http://guiyang.pbc.gov.cn/guiyang/113288/113306/113313/5503829/f2f2e027/index",
+    "http://guiyang.pbc.gov.cn/guiyang/113288/113306/113313/5503832/e5bdd1d9/index",
+    "http://guiyang.pbc.gov.cn/guiyang/113288/113306/113313/5503847/5e8f7f5f/index",
+    "http://guiyang.pbc.gov.cn/guiyang/113288/113306/113313/5503850/52e30972/index",
+    "http://guiyang.pbc.gov.cn/guiyang/113288/113306/113313/5503853/0d4d261c/index",
+    "http://guiyang.pbc.gov.cn/guiyang/113288/113306/113313/5503856/48abc5f3/index",
+    "http://guiyang.pbc.gov.cn/guiyang/113288/113306/113313/5503859/7c29501c/index"
+           ],
+    "福州": ["http://fuzhou.pbc.gov.cn/fuzhou/126805/126823/126830/5508082/bf79427f/index",
+    "http://fuzhou.pbc.gov.cn/fuzhou/126805/126823/126830/5508085/05d31526/index",
+    "http://fuzhou.pbc.gov.cn/fuzhou/126805/126823/126830/5508088/1829203e/index",
+    "http://fuzhou.pbc.gov.cn/fuzhou/126805/126823/126830/5508091/c420261e/index",
+    "http://fuzhou.pbc.gov.cn/fuzhou/126805/126823/126830/5508094/a1cba212/index",
+    "http://fuzhou.pbc.gov.cn/fuzhou/126805/126823/126830/5508097/b74492dd/index",
+    "http://fuzhou.pbc.gov.cn/fuzhou/126805/126823/126830/5508100/a446aea0/index",
+    "http://fuzhou.pbc.gov.cn/fuzhou/126805/126823/126830/5508103/1e5879cb/index"       
+           ],
+    "成都": ["http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498158/8e16033b/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498167/29dac0a0/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498170/563e1830/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498173/4c0a43e3/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498176/ff7e00c6/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498179/207cacf7/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498182/e2bee0a8/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498185/92a81550/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498188/834a945a/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498191/178e526c/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498194/b40a1258/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498197/a2270334/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498200/5335b8be/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498203/c6181f3b/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498206/dcc79bd4/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498209/a9dc68a3/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498215/d91e6f76/index",
+    "http://chengdu.pbc.gov.cn/chengdu/129320/129341/129350/5498218/9714a233/index"
+    ],
+    "呼和浩特": ["http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/5483143/a422cb5f/index",
+    "http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/5483040/9ace9875/index",
+    "http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/5483043/2e00ae13/index",
+    "http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/5483046/8c2a13e7/index",
+    "http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/5483049/15470751/index",
+    "http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/5483052/4ceb46df/index",
+    "http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/5483055/ffbd20bf/index",
+    "http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/5483058/165ea602/index",
+    "http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/5483061/b9219924/index",
+    "http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/5483064/096d3fb8/index",
+    "http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/5483067/ae6fa3c1/index",
+    "http://huhehaote.pbc.gov.cn/huhehaote/129797/129815/129822/5483070/b1684f44/index"  
+             ],
     "郑州": ["http://zhengzhou.pbc.gov.cn/zhengzhou/124182/124200/124207/18390/index"],
     "北京": ["http://beijing.pbc.gov.cn/beijing/132030/132052/132059/19192/index"],
     "合肥": ["http://hefei.pbc.gov.cn/hefei/122364/122382/122389/14535/index"],
@@ -131,6 +203,11 @@ def get_chrome_driver(folder):
     options.add_experimental_option("prefs", {"download.default_directory": folder})
     service = ChromeService(executable_path=ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
+    
+    # Set shorter timeouts to fail faster on problematic pages
+    driver.set_page_load_timeout(20)  # Reduced to 20 seconds for faster failure
+    driver.implicitly_wait(5)  # Reduced to 5 seconds for element waiting
+    
     return driver
 
 def savedf(df, basename):
@@ -193,6 +270,12 @@ def get_sumeventdf(orgname: str, start: int, end: int):
                     f"[update-list] page_ok url={url} items={len(df)} links={len(linkls)}"
                 )
                 resultls.append(df)
+            except TimeoutException as e:
+                logger.info(f"[update-list] page_timeout url={url} err=Page load timeout after 20s")
+                continue
+            except WebDriverException as e:
+                logger.info(f"[update-list] page_error url={url} err=WebDriver error: {e}")
+                continue
             except Exception as e:
                 logger.info(f"[update-list] page_error url={url} err={e}")
                 continue
@@ -328,6 +411,12 @@ def scrape_detail_pages(links, orgname: str):
 
                 # Pace to be gentle
                 time.sleep(random.randint(2, 5))
+            except TimeoutException as e:
+                logger.info(f"[update-details] page_timeout url={durl} err=Page load timeout after 20s")
+                continue
+            except WebDriverException as e:
+                logger.info(f"[update-details] page_error url={durl} err=WebDriver error: {e}")
+                continue
             except Exception as e:
                 logger.info(f"[update-details] page_error url={durl} err={e}")
                 continue
