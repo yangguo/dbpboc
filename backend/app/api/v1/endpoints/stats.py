@@ -15,7 +15,12 @@ def get_csvdf(penfolder, beginwith):
     dflist = []
     for filepath in files:
         try:
-            pendf = pd.read_csv(filepath, index_col=0)
+            pendf = pd.read_csv(
+                filepath,
+                index_col=0,
+                dtype=str,
+                low_memory=False,
+            )
             dflist.append(pendf)
         except Exception as e:
             print(f"Error reading {filepath}: {e}")
