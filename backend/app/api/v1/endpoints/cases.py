@@ -396,9 +396,9 @@ def get_chrome_driver(folder):
     service = ChromeService(executable_path=ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
     
-    # Set shorter timeouts to fail faster on problematic pages
-    driver.set_page_load_timeout(20)  # Reduced to 20 seconds for faster failure
-    driver.implicitly_wait(5)  # Reduced to 5 seconds for element waiting
+    # Set timeouts for page loading and element waiting
+    driver.set_page_load_timeout(45)  # Increased to 45 seconds for better reliability
+    driver.implicitly_wait(10)  # Increased to 10 seconds for element waiting
     
     return driver
 
@@ -463,7 +463,7 @@ def get_sumeventdf(orgname: str, start: int, end: int):
                 )
                 resultls.append(df)
             except TimeoutException as e:
-                logger.info(f"[update-list] page_timeout url={url} err=Page load timeout after 20s")
+                logger.info(f"[update-list] page_timeout url={url} err=Page load timeout after 45s")
                 continue
             except WebDriverException as e:
                 logger.info(f"[update-list] page_error url={url} err=WebDriver error: {e}")
@@ -508,6 +508,46 @@ def get_new_links_for_org(orgname: str):
     old_links = dtl_df["link"].dropna().tolist() if not dtl_df.empty else []
     return [x for x in current_links if x not in set(old_links)]
 
+def get_new_links_with_details_for_org(orgname: str):
+    """Compute links in sum not present in dtl for the org, with name and date details."""
+    sum_df = get_pboc_data_for_pending(orgname, "sum")
+    dtl_df = get_pboc_data_for_pending(orgname, "dtl")
+    if sum_df.empty:
+        return []
+    
+    # Get old links that already have details
+    old_links = set(dtl_df["link"].dropna().tolist()) if not dtl_df.empty else set()
+    
+    # Filter for new links only
+    new_links_df = sum_df[~sum_df["link"].isin(old_links) & sum_df["link"].notna()].copy()
+    
+    if new_links_df.empty:
+        return []
+    
+    # Prepare the result with link, name, and date
+    result = []
+    for _, row in new_links_df.iterrows():
+        link_info = {
+            "link": row["link"],
+            "name": row.get("name", ""),  # Use empty string if name column doesn't exist
+            "date": None
+        }
+        
+        # Try to get date from various possible columns
+        if "发布日期" in row and pd.notna(row["发布日期"]):
+            link_info["date"] = str(row["发布日期"])
+        elif "date" in row and pd.notna(row["date"]):
+            link_info["date"] = str(row["date"])
+        elif "日期" in row and pd.notna(row["日期"]):
+            link_info["date"] = str(row["日期"])
+        
+        result.append(link_info)
+    
+    # Sort by date descending (most recent first), then by name
+    result.sort(key=lambda x: (x["date"] or "0000-00-00", x["name"]), reverse=True)
+    
+    return result
+
 def web2table(rows):
     data = []
     for tr in rows:
@@ -520,9 +560,9 @@ def web2table(rows):
     return pd.DataFrame(data)
 
 def scrape_detail_pages(links, orgname: str):
-    """Scrape detail pages for download links and tables; save to temp subfolder.
+    """Scrape detail pages for download links and raw text content; save to temp subfolder.
 
-    Returns tuple (download_count, table_count).
+    Returns tuple (download_count, content_count).
     """
     org_name_index = org2name.get(orgname)
     if not org_name_index:
@@ -552,59 +592,70 @@ def scrape_detail_pages(links, orgname: str):
                     df_dl["link"] = durl
                     download_frames.append(df_dl)
 
-                # Collect table rows; headquarters uses a different table structure
-                if org_name_index == "zongbu":
-                    rows = browser.find_elements(By.XPATH, "//table/tbody/tr")
-                else:
-                    rows = browser.find_elements(By.XPATH, "//td[@class='hei14jj']//tr")
-                df_tbl = web2table(rows)
-                if not df_tbl.empty:
-                    colen = len(df_tbl.columns)
-                    if colen == 8:
-                        layout = "8cols"
-                        df_tbl.columns = [
-                            "序号", "企业名称", "处罚决定书文号", "违法行为类型", "行政处罚内容",
-                            "作出行政处罚决定机关名称", "作出行政处罚决定日期", "备注",
-                        ]
-                    elif colen == 7:
-                        layout = "7cols+备注"
-                        df_tbl["备注"] = ""
-                        df_tbl.columns = [
-                            "序号", "企业名称", "处罚决定书文号", "违法行为类型", "行政处罚内容",
-                            "作出行政处罚决定机关名称", "作出行政处罚决定日期", "备注",
-                        ]
-                    elif colen == 6:
-                        layout = "6cols+序号备注"
-                        df_tbl["序号"] = ""
-                        df_tbl["备注"] = ""
-                        df_tbl.columns = [
-                            "企业名称", "处罚决定书文号", "违法行为类型", "行政处罚内容",
-                            "作出行政处罚决定机关名称", "作出行政处罚决定日期", "序号", "备注",
-                        ]
-                    elif colen >= 9:
-                        layout = f">=9cols_drop_to_8"
-                        df_tbl = df_tbl.drop(df_tbl.columns[7], axis=1)
-                        df_tbl = df_tbl[df_tbl.columns[:8]]
-                        df_tbl.columns = [
-                            "序号", "企业名称", "处罚决定书文号", "违法行为类型", "行政处罚内容",
-                            "作出行政处罚决定机关名称", "作出行政处罚决定日期", "备注",
-                        ]
+                # Extract raw text content from the page only if it has meaningful content beyond download links
+                has_meaningful_content = False
+                try:
+                    # Check if page has table/content structure beyond just download links
+                    if org_name_index == "zongbu":
+                        # For headquarters, check if there are table rows with actual data
+                        table_rows = browser.find_elements(By.XPATH, "//table/tbody/tr")
+                        if table_rows and len(table_rows) > 0:
+                            # Check if any row has meaningful text (not just download links)
+                            for row in table_rows[:3]:  # Check first few rows
+                                row_text = row.text.strip()
+                                if row_text and len(row_text) > 20:  # Meaningful content threshold
+                                    has_meaningful_content = True
+                                    break
                     else:
-                        # Unrecognized layout; skip
-                        layout = f"unknown_{colen}cols"
-                        df_tbl = pd.DataFrame()
-
-                    if not df_tbl.empty:
-                        logger.info(
-                            f"[update-details] table_found url={durl} rows={len(df_tbl)} layout={layout}"
-                        )
-                        df_tbl["link"] = durl
-                        table_frames.append(df_tbl)
+                        # For regional branches, check content in hei14jj class
+                        content_element = browser.find_element(By.XPATH, "//td[@class='hei14jj']")
+                        
+                        # Check if there are table rows or structured content
+                        table_rows = content_element.find_elements(By.XPATH, ".//tr")
+                        if table_rows and len(table_rows) > 1:  # More than just header
+                            has_meaningful_content = True
+                        else:
+                            # Check for other meaningful content (not just links)
+                            content_text = content_element.text.strip()
+                            # Remove download link text patterns to see if there's other content
+                            if content_text and len(content_text) > 50:  # Threshold for meaningful content
+                                # Check if it's not just a list of download links
+                                lines = content_text.split('\n')
+                                meaningful_lines = [line for line in lines if line.strip() and 
+                                                  not line.strip().startswith('http') and 
+                                                  '下载' not in line and '文件' not in line]
+                                if len(meaningful_lines) > 2:
+                                    has_meaningful_content = True
+                    
+                    # Only extract and save content if it has meaningful data
+                    if has_meaningful_content:
+                        if org_name_index == "zongbu":
+                            content_element = browser.find_element(By.XPATH, "//table/tbody")
+                        else:
+                            content_element = browser.find_element(By.XPATH, "//td[@class='hei14jj']")
+                        
+                        raw_content = content_element.text.strip()
+                        
+                        if raw_content:
+                            df_tbl = pd.DataFrame({
+                                "content": [raw_content],
+                                "link": [durl]
+                            })
+                            
+                            logger.info(
+                                f"[update-details] content_found url={durl} length={len(raw_content)}"
+                            )
+                            table_frames.append(df_tbl)
+                    else:
+                        logger.info(f"[update-details] download_only_page url={durl}")
+                        
+                except Exception as content_error:
+                    logger.info(f"[update-details] content_extraction_error url={durl} err={content_error}")
 
                 # Pace to be gentle
                 time.sleep(random.randint(2, 5))
             except TimeoutException as e:
-                logger.info(f"[update-details] page_timeout url={durl} err=Page load timeout after 20s")
+                logger.info(f"[update-details] page_timeout url={durl} err=Page load timeout after 45s")
                 continue
             except WebDriverException as e:
                 logger.info(f"[update-details] page_error url={durl} err=WebDriver error: {e}")
@@ -618,18 +669,20 @@ def scrape_detail_pages(links, orgname: str):
     # Save intermediate results under temp/<org>
     download_count = 0
     table_count = 0
+    # Generate timestamp for both download and table files
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    
     if download_frames:
         dres = pd.concat(download_frames).reset_index(drop=True)
-        savetempsub(dres, f"pboctodownload{org_name_index}", org_name_index)
+        savetempsub(dres, f"pboctodownload{org_name_index}{timestamp}", org_name_index)
         download_count = len(dres)
-        logger.info(f"[update-details] saved_downloads org={orgname} count={download_count}")
+        logger.info(f"[update-details] saved_downloads org={orgname} count={download_count} ts={timestamp}")
     if table_frames:
         tres = pd.concat(table_frames).reset_index(drop=True)
         # keep historical saves timestamped similar to legacy
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         savetempsub(tres, f"pboctotable{org_name_index}{timestamp}", org_name_index)
         table_count = len(tres)
-        logger.info(f"[update-details] saved_tables org={orgname} count={table_count} ts={timestamp}")
+        logger.info(f"[update-details] saved_content org={orgname} count={table_count} ts={timestamp}")
 
     return (download_count, table_count)
 
@@ -685,6 +738,62 @@ async def update_list(request: UpdateListRequest):
         f"[update-list] org={org_name} pages={start_page}-{end_page} scraped_rows={scraped_rows} scraped_links={scraped_links} new_cases={new_cases} elapsed_ms={elapsed_ms}"
     )
     return {"newCases": new_cases}
+
+@router.get("/pending-details/{org_name}")
+async def get_pending_details(org_name: str):
+    """Get list of pending detail links for an organization with name and date."""
+    try:
+        if not org2name.get(org_name):
+            raise HTTPException(status_code=400, detail="Invalid organization name")
+        
+        links_with_details = get_new_links_with_details_for_org(org_name)
+        return {
+            "orgName": org_name,
+            "pendingLinks": links_with_details,
+            "count": len(links_with_details)
+        }
+    except Exception as e:
+        logger.error(f"Error getting pending details for {org_name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class UpdateDetailsWithLinksRequest(BaseModel):
+    orgName: str
+    selectedLinks: List[str] = []  # If empty, update all pending links
+
+@router.post("/update-details-selective")
+async def update_details_selective(request: UpdateDetailsWithLinksRequest):
+    """Update details for selected links only."""
+    org_name = request.orgName
+    if not org2name.get(org_name):
+        raise HTTPException(status_code=400, detail="Invalid organization name")
+    
+    started_at = time.time()
+    
+    # Get all pending links
+    all_pending_links = get_new_links_for_org(org_name)
+    
+    # Use selected links if provided, otherwise use all pending
+    if request.selectedLinks:
+        links_to_update = [link for link in request.selectedLinks if link in all_pending_links]
+    else:
+        links_to_update = all_pending_links
+    
+    link_count = len(links_to_update)
+    logger.info(f"[update-details-selective] org={org_name} links_to_update={link_count}")
+    
+    if not links_to_update:
+        elapsed_ms = int((time.time() - started_at) * 1000)
+        logger.info(
+            f"[update-details-selective] org={org_name} updated_cases=0 downloads=0 tables=0 elapsed_ms={elapsed_ms}"
+        )
+        return {"updatedCases": 0}
+    
+    dl_count, tbl_count = scrape_detail_pages(links_to_update, org_name)
+    elapsed_ms = int((time.time() - started_at) * 1000)
+    logger.info(
+        f"[update-details-selective] org={org_name} updated_cases={link_count} downloads={dl_count} tables={tbl_count} elapsed_ms={elapsed_ms}"
+    )
+    return {"updatedCases": link_count, "downloads": dl_count, "tables": tbl_count}
 
 @router.post("/update-details")
 async def update_details(request: UpdateDetailsRequest):

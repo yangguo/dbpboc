@@ -450,6 +450,14 @@ export default function UpdatePage() {
                 <FileText className="h-4 w-4 mr-2" />
                 更新详情
               </Button>
+              <Button
+                onClick={() => window.location.href = '/update/pending'}
+                className="w-full"
+                variant="secondary"
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                选择性更新详情
+              </Button>
             </CardContent>
           </Card>
         </div>

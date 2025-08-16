@@ -32,6 +32,16 @@ const navigation = [
     name: "案例更新",
     href: "/update",
     icon: RefreshCw,
+    children: [
+      {
+        name: "批量更新",
+        href: "/update",
+      },
+      {
+        name: "选择性更新",
+        href: "/update/pending",
+      },
+    ],
   },
   {
     name: "文档管理",
@@ -89,21 +99,48 @@ export function Sidebar({ className }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-2">
         {navigation.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive = pathname === item.href || (item.children && item.children.some(child => pathname === child.href));
+          const hasChildren = item.children && item.children.length > 0;
+          
           return (
-            <Link key={item.name} href={item.href}>
-              <Button
-                variant={isActive ? "secondary" : "ghost"}
-                className={cn(
-                  "w-full justify-start",
-                  isCollapsed ? "px-2" : "px-3",
-                  isActive && "bg-secondary text-secondary-foreground"
-                )}
-              >
-                <item.icon className={cn("h-4 w-4", !isCollapsed && "mr-2")} />
-                {!isCollapsed && <span>{item.name}</span>}
-              </Button>
-            </Link>
+            <div key={item.name}>
+              <Link href={item.href}>
+                <Button
+                  variant={isActive ? "secondary" : "ghost"}
+                  className={cn(
+                    "w-full justify-start",
+                    isCollapsed ? "px-2" : "px-3",
+                    isActive && "bg-secondary text-secondary-foreground"
+                  )}
+                >
+                  <item.icon className={cn("h-4 w-4", !isCollapsed && "mr-2")} />
+                  {!isCollapsed && <span>{item.name}</span>}
+                </Button>
+              </Link>
+              
+              {/* Sub-navigation */}
+              {hasChildren && !isCollapsed && (
+                <div className="ml-6 mt-1 space-y-1">
+                  {item.children.map((child) => {
+                    const isChildActive = pathname === child.href;
+                    return (
+                      <Link key={child.name} href={child.href}>
+                        <Button
+                          variant={isChildActive ? "secondary" : "ghost"}
+                          size="sm"
+                          className={cn(
+                            "w-full justify-start text-sm",
+                            isChildActive && "bg-secondary text-secondary-foreground"
+                          )}
+                        >
+                          {child.name}
+                        </Button>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           );
         })}
       </nav>
