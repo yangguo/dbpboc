@@ -608,15 +608,22 @@ def scrape_detail_pages(links, orgname: str):
                 try:
                     # Check if page has table/content structure beyond just download links
                     if org_name_index == "zongbu":
-                        # For headquarters, check if there are table rows with actual data
-                        table_rows = browser.find_elements(By.XPATH, "//table/tbody/tr")
-                        if table_rows and len(table_rows) > 0:
-                            # Check if any row has meaningful text (not just download links)
-                            for row in table_rows[:3]:  # Check first few rows
-                                row_text = row.text.strip()
-                                if row_text and len(row_text) > 20:  # Meaningful content threshold
-                                    has_meaningful_content = True
-                                    break
+                        # For headquarters, extract from easysiteText element
+                        try:
+                            content_element = browser.find_element(By.XPATH, "//*[@id='easysiteText']")
+                            content_text = content_element.text.strip()
+                            if content_text and len(content_text) > 20:  # Meaningful content threshold
+                                has_meaningful_content = True
+                        except Exception:
+                            # Fallback to table check if easysiteText not found
+                            table_rows = browser.find_elements(By.XPATH, "//table/tbody/tr")
+                            if table_rows and len(table_rows) > 0:
+                                # Check if any row has meaningful text (not just download links)
+                                for row in table_rows[:3]:  # Check first few rows
+                                    row_text = row.text.strip()
+                                    if row_text and len(row_text) > 20:  # Meaningful content threshold
+                                        has_meaningful_content = True
+                                        break
                     else:
                         # For regional branches, check content in hei14jj class
                         content_element = browser.find_element(By.XPATH, "//td[@class='hei14jj']")
@@ -641,7 +648,7 @@ def scrape_detail_pages(links, orgname: str):
                     # Only extract and save content if it has meaningful data
                     if has_meaningful_content:
                         if org_name_index == "zongbu":
-                            content_element = browser.find_element(By.XPATH, "//table/tbody")
+                            content_element = browser.find_element(By.XPATH, "//*[@id='easysiteText']")
                         else:
                             content_element = browser.find_element(By.XPATH, "//td[@class='hei14jj']")
                         
@@ -776,15 +783,22 @@ async def scrape_detail_pages_with_progress(links, orgname: str, generate_progre
                 try:
                     # Check if page has table/content structure beyond just download links
                     if org_name_index == "zongbu":
-                        # For headquarters, check if there are table rows with actual data
-                        table_rows = browser.find_elements(By.XPATH, "//table/tbody/tr")
-                        if table_rows and len(table_rows) > 0:
-                            # Check if any row has meaningful text (not just download links)
-                            for row in table_rows[:3]:  # Check first few rows
-                                row_text = row.text.strip()
-                                if row_text and len(row_text) > 20:  # Meaningful content threshold
-                                    has_meaningful_content = True
-                                    break
+                        # For headquarters, extract from easysiteText element
+                        try:
+                            content_element = browser.find_element(By.XPATH, "//*[@id='easysiteText']")
+                            content_text = content_element.text.strip()
+                            if content_text and len(content_text) > 20:  # Meaningful content threshold
+                                has_meaningful_content = True
+                        except Exception:
+                            # Fallback to table check if easysiteText not found
+                            table_rows = browser.find_elements(By.XPATH, "//table/tbody/tr")
+                            if table_rows and len(table_rows) > 0:
+                                # Check if any row has meaningful text (not just download links)
+                                for row in table_rows[:3]:  # Check first few rows
+                                    row_text = row.text.strip()
+                                    if row_text and len(row_text) > 20:  # Meaningful content threshold
+                                        has_meaningful_content = True
+                                        break
                     else:
                         # For regional branches, check content in hei14jj class
                         content_element = browser.find_element(By.XPATH, "//td[@class='hei14jj']")
@@ -809,7 +823,7 @@ async def scrape_detail_pages_with_progress(links, orgname: str, generate_progre
                     # Only extract and save content if it has meaningful data
                     if has_meaningful_content:
                         if org_name_index == "zongbu":
-                            content_element = browser.find_element(By.XPATH, "//table/tbody")
+                            content_element = browser.find_element(By.XPATH, "//*[@id='easysiteText']")
                         else:
                             content_element = browser.find_element(By.XPATH, "//td[@class='hei14jj']")
                         
@@ -955,15 +969,22 @@ def scrape_detail_pages_with_progress_queue(links, orgname: str, progress_queue_
                 try:
                     # Check if page has table/content structure beyond just download links
                     if org_name_index == "zongbu":
-                        # For headquarters, check if there are table rows with actual data
-                        table_rows = browser.find_elements(By.XPATH, "//table/tbody/tr")
-                        if table_rows and len(table_rows) > 0:
-                            # Check if any row has meaningful text (not just download links)
-                            for row in table_rows[:3]:  # Check first few rows
-                                row_text = row.text.strip()
-                                if row_text and len(row_text) > 20:  # Meaningful content threshold
-                                    has_meaningful_content = True
-                                    break
+                        # For headquarters, extract from easysiteText element
+                        try:
+                            content_element = browser.find_element(By.XPATH, "//*[@id='easysiteText']")
+                            content_text = content_element.text.strip()
+                            if content_text and len(content_text) > 20:  # Meaningful content threshold
+                                has_meaningful_content = True
+                        except Exception:
+                            # Fallback to table check if easysiteText not found
+                            table_rows = browser.find_elements(By.XPATH, "//table/tbody/tr")
+                            if table_rows and len(table_rows) > 0:
+                                # Check if any row has meaningful text (not just download links)
+                                for row in table_rows[:3]:  # Check first few rows
+                                    row_text = row.text.strip()
+                                    if row_text and len(row_text) > 20:  # Meaningful content threshold
+                                        has_meaningful_content = True
+                                        break
                     else:
                         # For regional branches, check content in hei14jj class
                         content_element = browser.find_element(By.XPATH, "//td[@class='hei14jj']")
@@ -988,7 +1009,7 @@ def scrape_detail_pages_with_progress_queue(links, orgname: str, progress_queue_
                     # Only extract and save content if it has meaningful data
                     if has_meaningful_content:
                         if org_name_index == "zongbu":
-                            content_element = browser.find_element(By.XPATH, "//table/tbody")
+                            content_element = browser.find_element(By.XPATH, "//*[@id='easysiteText']")
                         else:
                             content_element = browser.find_element(By.XPATH, "//td[@class='hei14jj']")
                         
