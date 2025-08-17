@@ -319,6 +319,9 @@ def main():
     elif choice == "附件处理":
         st.subheader("附件处理")
 
+        # ensure org list exists in session state
+        if "org_name_ls" not in st.session_state:
+            st.session_state["org_name_ls"] = cityls
         # get org_name list from session state
         org_name_ls = st.session_state["org_name_ls"]
         # choose orgname index
