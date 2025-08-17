@@ -3,27 +3,13 @@
 import { useState } from "react";
 import { MainLayout } from "@/components/layout/main-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { User, Bell, Shield, Database, Mail, Phone, Save, Upload, Key, Globe, Palette } from "lucide-react";
+import { Bell, Shield, Database, Save, Globe, Palette } from "lucide-react";
 
 export default function SettingsPage() {
-  const [profile, setProfile] = useState({
-    fullName: "张三",
-    username: "zhangsan",
-    email: "zhangsan@pboc.gov.cn",
-    phone: "010-12345679",
-    department: "法律事务部",
-    position: "案例管理员",
-    bio: "负责案例管理和文档处理工作",
-    avatar: ""
-  });
-
   const [notifications, setNotifications] = useState({
     emailNotifications: true,
     pushNotifications: true,
@@ -34,10 +20,9 @@ export default function SettingsPage() {
   });
 
   const [security, setSecurity] = useState({
-    twoFactorAuth: false,
-    sessionTimeout: "30",
-    passwordExpiry: "90",
-    loginAlerts: true
+    dataEncryption: true,
+    auditLogging: true,
+    accessControl: true
   });
 
   const [system, setSystem] = useState({
@@ -56,10 +41,6 @@ export default function SettingsPage() {
     encryptionEnabled: true
   });
 
-  const handleProfileSave = () => {
-    console.log("Saving profile:", profile);
-  };
-
   const handleNotificationsSave = () => {
     console.log("Saving notifications:", notifications);
   };
@@ -76,31 +57,16 @@ export default function SettingsPage() {
     console.log("Saving database:", database);
   };
 
-  const handleAvatarUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      console.log("Uploading avatar:", file);
-    }
-  };
-
-  const handlePasswordChange = () => {
-    console.log("Changing password");
-  };
-
   return (
     <MainLayout>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">系统设置</h1>
-          <p className="text-muted-foreground">管理您的账户设置和系统偏好</p>
+          <p className="text-muted-foreground">管理系统配置和偏好设置</p>
         </div>
 
-        <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="profile" className="flex items-center gap-2">
-              <User className="h-4 w-4" />
-              个人资料
-            </TabsTrigger>
+        <Tabs defaultValue="notifications" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="notifications" className="flex items-center gap-2">
               <Bell className="h-4 w-4" />
               通知设置
@@ -118,128 +84,6 @@ export default function SettingsPage() {
               数据管理
             </TabsTrigger>
           </TabsList>
-
-          {/* Profile Settings */}
-          <TabsContent value="profile">
-            <Card>
-              <CardHeader>
-                <CardTitle>个人资料</CardTitle>
-                <CardDescription>管理您的个人信息和头像</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center gap-6">
-                  <Avatar className="h-20 w-20">
-                    <AvatarImage src={profile.avatar} />
-                    <AvatarFallback className="text-lg">
-                      {profile.fullName.split('').slice(0, 2).join('')}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <Button variant="outline" className="flex items-center gap-2">
-                      <Upload className="h-4 w-4" />
-                      <label htmlFor="avatar-upload" className="cursor-pointer">
-                        更换头像
-                      </label>
-                    </Button>
-                    <input
-                      id="avatar-upload"
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleAvatarUpload}
-                    />
-                    <p className="text-sm text-muted-foreground mt-2">
-                      支持 JPG、PNG 格式，文件大小不超过 2MB
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium">姓名</label>
-                    <Input
-                      value={profile.fullName}
-                      onChange={(e) => setProfile({...profile, fullName: e.target.value})}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">用户名</label>
-                    <Input
-                      value={profile.username}
-                      onChange={(e) => setProfile({...profile, username: e.target.value})}
-                      className="mt-1"
-                      disabled
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium flex items-center gap-1">
-                      <Mail className="h-4 w-4" />
-                      邮箱
-                    </label>
-                    <Input
-                      type="email"
-                      value={profile.email}
-                      onChange={(e) => setProfile({...profile, email: e.target.value})}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium flex items-center gap-1">
-                      <Phone className="h-4 w-4" />
-                      电话
-                    </label>
-                    <Input
-                      value={profile.phone}
-                      onChange={(e) => setProfile({...profile, phone: e.target.value})}
-                      className="mt-1"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium">部门</label>
-                    <Input
-                      value={profile.department}
-                      onChange={(e) => setProfile({...profile, department: e.target.value})}
-                      className="mt-1"
-                      disabled
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">职位</label>
-                    <Input
-                      value={profile.position}
-                      onChange={(e) => setProfile({...profile, position: e.target.value})}
-                      className="mt-1"
-                      disabled
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium">个人简介</label>
-                  <Textarea
-                    value={profile.bio}
-                    onChange={(e) => setProfile({...profile, bio: e.target.value})}
-                    className="mt-1"
-                    rows={3}
-                  />
-                </div>
-
-                <div className="flex justify-end">
-                  <Button onClick={handleProfileSave} className="flex items-center gap-2">
-                    <Save className="h-4 w-4" />
-                    保存更改
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
 
           {/* Notification Settings */}
           <TabsContent value="notifications">
@@ -332,68 +176,41 @@ export default function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>安全设置</CardTitle>
-                <CardDescription>管理您的账户安全和访问控制</CardDescription>
+                <CardDescription>管理系统安全和数据保护设置</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-medium">双因素认证</h4>
-                      <p className="text-sm text-muted-foreground">为您的账户添加额外的安全层</p>
+                      <h4 className="font-medium">数据加密</h4>
+                      <p className="text-sm text-muted-foreground">启用数据传输和存储加密</p>
                     </div>
                     <Switch
-                      checked={security.twoFactorAuth}
-                      onCheckedChange={(checked) => setSecurity({...security, twoFactorAuth: checked})}
+                      checked={security.dataEncryption}
+                      onCheckedChange={(checked) => setSecurity({...security, dataEncryption: checked})}
                     />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium">会话超时（分钟）</label>
-                      <Select value={security.sessionTimeout} onValueChange={(value) => setSecurity({...security, sessionTimeout: value})}>
-                        <SelectTrigger className="mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="15">15分钟</SelectItem>
-                          <SelectItem value="30">30分钟</SelectItem>
-                          <SelectItem value="60">1小时</SelectItem>
-                          <SelectItem value="120">2小时</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">密码过期（天）</label>
-                      <Select value={security.passwordExpiry} onValueChange={(value) => setSecurity({...security, passwordExpiry: value})}>
-                        <SelectTrigger className="mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="30">30天</SelectItem>
-                          <SelectItem value="60">60天</SelectItem>
-                          <SelectItem value="90">90天</SelectItem>
-                          <SelectItem value="180">180天</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
                   </div>
 
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-medium">登录警报</h4>
-                      <p className="text-sm text-muted-foreground">异常登录时发送警报</p>
+                      <h4 className="font-medium">审计日志</h4>
+                      <p className="text-sm text-muted-foreground">记录系统操作和数据访问日志</p>
                     </div>
                     <Switch
-                      checked={security.loginAlerts}
-                      onCheckedChange={(checked) => setSecurity({...security, loginAlerts: checked})}
+                      checked={security.auditLogging}
+                      onCheckedChange={(checked) => setSecurity({...security, auditLogging: checked})}
                     />
                   </div>
 
-                  <div className="pt-4 border-t">
-                    <Button onClick={handlePasswordChange} variant="outline" className="flex items-center gap-2">
-                      <Key className="h-4 w-4" />
-                      更改密码
-                    </Button>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium">访问控制</h4>
+                      <p className="text-sm text-muted-foreground">启用基于角色的访问控制</p>
+                    </div>
+                    <Switch
+                      checked={security.accessControl}
+                      onCheckedChange={(checked) => setSecurity({...security, accessControl: checked})}
+                    />
                   </div>
                 </div>
 
