@@ -14,7 +14,8 @@ import {
   X,
   BarChart3,
   Upload,
-  RefreshCw
+  RefreshCw,
+  Download
 } from "lucide-react";
 
 const navigation = [
@@ -40,6 +41,25 @@ const navigation = [
       {
         name: "选择性更新",
         href: "/update/pending",
+      },
+    ],
+  },
+  {
+    name: "附件处理",
+    href: "/attachments",
+    icon: Download,
+    children: [
+      {
+        name: "附件下载",
+        href: "/attachments",
+      },
+      {
+        name: "附件读取",
+        href: "/attachments/read",
+      },
+      {
+        name: "内容处理",
+        href: "/attachments/process",
       },
     ],
   },

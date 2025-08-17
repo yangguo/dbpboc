@@ -1285,7 +1285,8 @@ async def update_details_selective_stream(request: UpdateDetailsWithLinksRequest
                 yield f"data: {json.dumps({'type': 'error', 'orgName': org_name, 'error': results['error'], 'message': '更新过程中出现错误'})}\n\n"
             else:
                 # Send completion event
-                yield f"data: {json.dumps({'type': 'complete', 'orgName': org_name, 'updatedCases': total_links, 'downloads': results['dl_count'], 'tables': results['tbl_count'], 'message': f'详情更新完成！处理了 {total_links} 条案例，获取了 {results["dl_count"]} 个下载链接，提取了 {results["tbl_count"]} 个内容'})}\n\n"
+                completion_message = f'详情更新完成！处理了 {total_links} 条案例，获取了 {results["dl_count"]} 个下载链接，提取了 {results["tbl_count"]} 个内容'
+                yield f"data: {json.dumps({'type': 'complete', 'orgName': org_name, 'updatedCases': total_links, 'downloads': results['dl_count'], 'tables': results['tbl_count'], 'message': completion_message})}\n\n"
             
         except Exception as error:
             logger.error(f"[update-details-selective-stream] ERROR org={org_name} error={error}")
