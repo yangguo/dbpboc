@@ -3,7 +3,7 @@ import logging
 import asyncio
 import time
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, HTTPException, status, Query, BackgroundTasks
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import os
@@ -360,12 +360,147 @@ class DownloadStatus(BaseModel):
 # Global download status storage
 download_sessions: Dict[str, DownloadStatus] = {}
 
+async def perform_downloads_background(
+    session_id: str,
+    selected_attachments: list,
+    downloads_dir: str,
+    force_overwrite: bool
+):
+    """Background task to perform the actual downloads"""
+    download_status = download_sessions.get(session_id)
+    if not download_status:
+        logger.error(f"[BACKGROUND_DOWNLOAD] session_id={session_id} Session not found")
+        return
+    
+    downloaded_files = []
+    failed_downloads = []
+    skipped_files = []
+    
+    logger.info(f"[BACKGROUND_DOWNLOAD] session_id={session_id} Starting download loop for {len(selected_attachments)} attachments")
+    
+    for i, attachment in enumerate(selected_attachments):
+        file_progress = download_status.files[i]
+        download_status.current_file = file_progress.filename
+        
+        try:
+            if not attachment['download_url']:
+                file_progress.status = 'failed'
+                file_progress.error_message = 'No download URL available'
+                failed_downloads.append({
+                    'id': attachment['id'],
+                    'error': 'No download URL available'
+                })
+                download_status.failed += 1
+                continue
+            
+            # Generate safe filename
+            filename = attachment['filename'] or f"attachment_{attachment['id']}"
+            import re
+            filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+            
+            filepath = os.path.join(downloads_dir, filename)
+            
+            # Check if file already exists
+            if os.path.exists(filepath) and not force_overwrite:
+                file_progress.status = 'skipped'
+                file_progress.progress = 100
+                skipped_files.append({
+                    'id': attachment['id'],
+                    'filename': filename,
+                    'reason': 'File already exists'
+                })
+                download_status.skipped += 1
+                continue
+            
+            # Handle duplicate filenames only if force_overwrite is False
+            if not force_overwrite:
+                counter = 1
+                original_filepath = filepath
+                while os.path.exists(filepath):
+                    name, ext = os.path.splitext(original_filepath)
+                    filepath = f"{name}_{counter}{ext}"
+                    counter += 1
+                    filename = os.path.basename(filepath)
+                    file_progress.filename = filename
+            
+            # Update progress callback
+            def progress_callback(progress_data):
+                file_progress.status = 'downloading'
+                file_progress.progress = progress_data['progress']
+                file_progress.downloaded_bytes = progress_data['downloaded_bytes']
+                file_progress.total_bytes = progress_data['total_bytes']
+                file_progress.speed = progress_data['speed']
+                file_progress.retry_count = progress_data['retry_count']
+                
+                # Update overall progress
+                completed_files = download_status.completed + download_status.failed + download_status.skipped
+                current_file_progress = progress_data['progress'] / 100
+                download_status.overall_progress = int(((completed_files + current_file_progress) / download_status.total_files) * 100)
+                
+                # Debug log
+                logger.debug(f"[PROGRESS_CALLBACK] session_id={session_id} attachment_id={attachment['id']} progress={progress_data['progress']}% overall={download_status.overall_progress}%")
+            
+            # Download the file
+            logger.info(f"[BACKGROUND_DOWNLOAD] session_id={session_id} attachment_id={attachment['id']} Starting download: {attachment['download_url']}")
+            result = download_file_with_progress(
+                attachment['download_url'],
+                filepath,
+                progress_callback,
+                max_retries=3,
+                referer=attachment.get('referer') or attachment.get('download_url'),
+                attachment_id=attachment['id']
+            )
+            
+            if result['success']:
+                file_progress.status = 'completed'
+                file_progress.progress = 100
+                file_progress.retry_count = result['retry_count']
+                
+                downloaded_files.append({
+                    'id': attachment['id'],
+                    'filename': os.path.basename(filepath),
+                    'filepath': filepath,
+                    'size': result['size']
+                })
+                download_status.completed += 1
+                logger.info(f"[BACKGROUND_DOWNLOAD] session_id={session_id} attachment_id={attachment['id']} SUCCESS size={format_bytes(result['size'])} retries={result['retry_count']}")
+            else:
+                file_progress.status = 'failed'
+                file_progress.error_message = result['error']
+                file_progress.retry_count = result['retry_count']
+                
+                failed_downloads.append({
+                    'id': attachment['id'],
+                    'error': result['error']
+                })
+                download_status.failed += 1
+                logger.error(f"[BACKGROUND_DOWNLOAD] session_id={session_id} attachment_id={attachment['id']} FAILED error={result['error']} retries={result['retry_count']}")
+            
+        except Exception as e:
+            file_progress.status = 'failed'
+            file_progress.error_message = str(e)
+            
+            logger.error(f"[BACKGROUND_DOWNLOAD] session_id={session_id} attachment_id={attachment['id']} EXCEPTION error={str(e)}")
+            failed_downloads.append({
+                'id': attachment['id'],
+                'error': str(e)
+            })
+            download_status.failed += 1
+    
+    # Final progress update
+    download_status.overall_progress = 100
+    download_status.current_file = None
+    
+    # Log final session summary
+    logger.info(f"[BACKGROUND_DOWNLOAD] session_id={session_id} COMPLETED total={len(selected_attachments)} success={len(downloaded_files)} failed={len(failed_downloads)} skipped={len(skipped_files)}")
+
 def download_file_with_progress(
     url: str,
     filepath: str,
     progress_callback=None,
     max_retries: int = 3,
     referer: Optional[str] = None,
+    attachment_id: Optional[str] = None,
 ):
     """Download a file with progress tracking and robust retry logic.
 
@@ -374,8 +509,10 @@ def download_file_with_progress(
     - Send a realistic browser header set including optional Referer.
     - Increase read timeouts to accommodate slow servers.
     - Fallback to HTTPS if HTTP fails due to timeouts/disconnects.
+    - Enhanced logging with attachment ID for better tracking.
     """
     session = create_session_with_retry()
+    filename = os.path.basename(filepath)
 
     def build_headers(target_url: str) -> Dict[str, str]:
         parsed = urlparse(target_url)
@@ -402,19 +539,28 @@ def download_file_with_progress(
         headers = build_headers(target_url)
         # Use separate connect/read timeouts: slower read for large files
         timeout = (15, 120)
-        logger.info(f"Downloading {target_url} (attempt {attempt_index + 1}/{max_retries})")
+        
+        # Enhanced logging with attachment ID
+        log_prefix = f"[DOWNLOAD] attachment_id={attachment_id or 'unknown'} file={filename}"
+        logger.info(f"{log_prefix} Starting download attempt {attempt_index + 1}/{max_retries} url={target_url}")
+        
         with session.get(target_url, headers=headers, stream=True, allow_redirects=True, timeout=timeout) as response:
             response.raise_for_status()
             total_size = int(response.headers.get('Content-Length', 0))
             downloaded_size = 0
             start_time = time.time()
             chunk_size = 65536  # 64KB
+            last_log_time = start_time
+            
+            logger.info(f"{log_prefix} Response received, total_size={format_bytes(total_size) if total_size > 0 else 'unknown'}")
+            
             with open(filepath, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=chunk_size):
                     if not chunk:
                         continue
                     f.write(chunk)
                     downloaded_size += len(chunk)
+                    
                     # Progress callback
                     if progress_callback:
                         elapsed_time = max(time.time() - start_time, 1e-6)
@@ -427,7 +573,17 @@ def download_file_with_progress(
                             'speed': format_speed(speed),
                             'retry_count': attempt_index,
                         })
-        logger.info(f"Successfully downloaded {target_url} to {filepath} ({format_bytes(downloaded_size)})")
+                    
+                    # Log progress every 5 seconds for large files
+                    current_time = time.time()
+                    if current_time - last_log_time >= 5.0:
+                        elapsed_time = max(current_time - start_time, 1e-6)
+                        speed = downloaded_size / elapsed_time
+                        progress = int((downloaded_size / total_size) * 100) if total_size > 0 else 0
+                        logger.info(f"{log_prefix} Progress: {progress}% ({format_bytes(downloaded_size)}/{format_bytes(total_size) if total_size > 0 else 'unknown'}) speed={format_speed(speed)}")
+                        last_log_time = current_time
+                        
+        logger.info(f"{log_prefix} Download completed successfully, final_size={format_bytes(downloaded_size)}")
         return {
             'success': True,
             'size': downloaded_size,
@@ -476,12 +632,14 @@ def download_file_with_progress(
     }
 
 @router.post("/download/{org_name}")
-async def download_attachments(org_name: str, request: DownloadRequest):
+async def download_attachments(org_name: str, request: DownloadRequest, background_tasks: BackgroundTasks):
     """Download selected attachments for an organization"""
     if org_name not in org2name:
         raise HTTPException(status_code=400, detail="Invalid organization name")
     
     org_name_index = org2name[org_name]
+    
+    logger.info(f"[DOWNLOAD_REQUEST] org={org_name} attachment_ids={request.attachment_ids} force_overwrite={request.force_overwrite}")
     
     try:
         # Get the download list
@@ -516,6 +674,7 @@ async def download_attachments(org_name: str, request: DownloadRequest):
                 continue
         
         if not selected_attachments:
+            logger.warning(f"[DOWNLOAD_REQUEST] org={org_name} No valid attachments found for IDs: {request.attachment_ids}")
             raise HTTPException(status_code=400, detail="No valid attachments selected")
         
         # Create downloads directory
@@ -533,6 +692,8 @@ async def download_attachments(org_name: str, request: DownloadRequest):
             overall_progress=0,
             files=[]
         )
+        
+        logger.info(f"[DOWNLOAD_SESSION] session_id={session_id} STARTED org={org_name} total_files={len(selected_attachments)} force_overwrite={request.force_overwrite}")
         
         # Initialize progress for each file
         for attachment in selected_attachments:
@@ -552,133 +713,20 @@ async def download_attachments(org_name: str, request: DownloadRequest):
         
         download_sessions[session_id] = download_status
         
-        # Download files
-        downloaded_files = []
-        failed_downloads = []
-        skipped_files = []
+        # Start background download task
+        background_tasks.add_task(
+            perform_downloads_background,
+            session_id,
+            selected_attachments,
+            downloads_dir,
+            request.force_overwrite
+        )
         
-        for i, attachment in enumerate(selected_attachments):
-            file_progress = download_status.files[i]
-            download_status.current_file = file_progress.filename
-            
-            try:
-                if not attachment['download_url']:
-                    file_progress.status = 'failed'
-                    file_progress.error_message = 'No download URL available'
-                    failed_downloads.append({
-                        'id': attachment['id'],
-                        'error': 'No download URL available'
-                    })
-                    download_status.failed += 1
-                    continue
-                
-                # Generate safe filename
-                filename = attachment['filename'] or f"attachment_{attachment['id']}"
-                import re
-                filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
-                
-                filepath = os.path.join(downloads_dir, filename)
-                
-                # Check if file already exists
-                if os.path.exists(filepath) and not request.force_overwrite:
-                    file_progress.status = 'skipped'
-                    file_progress.progress = 100
-                    skipped_files.append({
-                        'id': attachment['id'],
-                        'filename': filename,
-                        'reason': 'File already exists'
-                    })
-                    download_status.skipped += 1
-                    continue
-                
-                # Handle duplicate filenames only if force_overwrite is False
-                if not request.force_overwrite:
-                    counter = 1
-                    original_filepath = filepath
-                    while os.path.exists(filepath):
-                        name, ext = os.path.splitext(original_filepath)
-                        filepath = f"{name}_{counter}{ext}"
-                        counter += 1
-                        filename = os.path.basename(filepath)
-                        file_progress.filename = filename
-                
-                # Update progress callback
-                def progress_callback(progress_data):
-                    file_progress.status = 'downloading'
-                    file_progress.progress = progress_data['progress']
-                    file_progress.downloaded_bytes = progress_data['downloaded_bytes']
-                    file_progress.total_bytes = progress_data['total_bytes']
-                    file_progress.speed = progress_data['speed']
-                    file_progress.retry_count = progress_data['retry_count']
-                    
-                    # Update overall progress
-                    completed_files = download_status.completed + download_status.failed + download_status.skipped
-                    current_file_progress = progress_data['progress'] / 100
-                    download_status.overall_progress = int(((completed_files + current_file_progress) / download_status.total_files) * 100)
-                
-                # Download the file
-                logger.info(f"Starting download for attachment {attachment['id']}: {attachment['download_url']}")
-                result = download_file_with_progress(
-                    attachment['download_url'],
-                    filepath,
-                    progress_callback,
-                    max_retries=3,
-                    referer=attachment.get('referer') or attachment.get('download_url')
-                )
-                
-                if result['success']:
-                    file_progress.status = 'completed'
-                    file_progress.progress = 100
-                    file_progress.retry_count = result['retry_count']
-                    
-                    downloaded_files.append({
-                        'id': attachment['id'],
-                        'filename': os.path.basename(filepath),
-                        'filepath': filepath,
-                        'size': result['size']
-                    })
-                    download_status.completed += 1
-                    logger.info(f"Successfully downloaded attachment {attachment['id']}")
-                else:
-                    file_progress.status = 'failed'
-                    file_progress.error_message = result['error']
-                    file_progress.retry_count = result['retry_count']
-                    
-                    failed_downloads.append({
-                        'id': attachment['id'],
-                        'error': result['error']
-                    })
-                    download_status.failed += 1
-                    logger.error(f"Failed to download attachment {attachment['id']}: {result['error']}")
-                
-            except Exception as e:
-                file_progress.status = 'failed'
-                file_progress.error_message = str(e)
-                
-                logger.error(f"Unexpected error downloading attachment {attachment['id']}: {e}")
-                failed_downloads.append({
-                    'id': attachment['id'],
-                    'error': str(e)
-                })
-                download_status.failed += 1
-        
-        # Final progress update
-        download_status.overall_progress = 100
-        download_status.current_file = None
-        
+        # Return immediately with session info
         return {
             "session_id": session_id,
-            "message": f"Downloaded {len(downloaded_files)} files successfully" + 
-                      (f", {len(failed_downloads)} failed" if failed_downloads else "") +
-                      (f", {len(skipped_files)} skipped" if skipped_files else ""),
-            "downloaded_files": downloaded_files,
-            "failed_downloads": failed_downloads,
-            "skipped_files": skipped_files,
-            "download_path": downloads_dir,
+            "message": f"Started downloading {len(selected_attachments)} files",
             "total_requested": len(selected_attachments),
-            "successful": len(downloaded_files),
-            "failed": len(failed_downloads),
-            "skipped": len(skipped_files),
             "download_status": download_status
         }
     
@@ -690,9 +738,12 @@ async def download_attachments(org_name: str, request: DownloadRequest):
 async def get_download_progress(session_id: str):
     """Get download progress for a session"""
     if session_id not in download_sessions:
+        logger.warning(f"[PROGRESS] session_id={session_id} not found in active sessions: {list(download_sessions.keys())}")
         raise HTTPException(status_code=404, detail="Download session not found")
     
-    return download_sessions[session_id]
+    progress = download_sessions[session_id]
+    logger.info(f"[PROGRESS] session_id={session_id} overall_progress={progress.overall_progress}% completed={progress.completed}/{progress.total_files}")
+    return progress
 
 @router.delete("/download-session/{session_id}")
 async def cleanup_download_session(session_id: str):

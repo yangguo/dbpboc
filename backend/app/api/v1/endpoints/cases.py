@@ -936,14 +936,15 @@ def scrape_detail_pages_with_progress_queue(links, orgname: str, progress_queue_
             current_progress = idx + 1
             progress_percent = round((current_progress / total_links) * 100, 1)
             
-            # Send real progress update via queue
+            # Send real progress update via queue BEFORE processing
             try:
                 progress_queue.put({
                     'type': 'progress',
                     'current_link': current_progress,
                     'total_links': total_links,
-                    'progress_percent': progress_percent
-                })
+                    'progress_percent': progress_percent,
+                    'message': f'正在处理第 {current_progress}/{total_links} 个链接 ({progress_percent}%)'
+                }, block=False)
             except:
                 pass  # Queue might be full or closed
             
@@ -951,6 +952,19 @@ def scrape_detail_pages_with_progress_queue(links, orgname: str, progress_queue_
                 logger.info(f"[update-details-queue] PROGRESS {current_progress}/{total_links} ({progress_percent}%) org={orgname} fetching url={durl}")
                 
                 browser.get(durl)
+                
+                # Send progress update after loading page
+                try:
+                    progress_queue.put({
+                        'type': 'progress',
+                        'current_link': current_progress,
+                        'total_links': total_links,
+                        'progress_percent': progress_percent,
+                        'message': f'已获取第 {current_progress}/{total_links} 个页面 ({progress_percent}%)'
+                    }, block=False)
+                except:
+                    pass
+                
                 # Collect download anchors
                 dl_anchors = browser.find_elements(By.XPATH, "//td[@class='hei14jj']//a")
                 downurl = []
@@ -1087,6 +1101,19 @@ def scrape_detail_pages_with_progress_queue(links, orgname: str, progress_queue_
         logger.info(f"[update-details-queue] FINAL_SAVE org={orgname} content={table_count} processed={total_links} ts={timestamp}")
 
     logger.info(f"[update-details-queue] PROCESSING_COMPLETE org={orgname} total_processed={total_links} downloads={download_count} content={table_count}")
+    
+    # Send completion signal via queue
+    try:
+        progress_queue.put({
+            'type': 'completed',
+            'download_count': download_count,
+            'table_count': table_count,
+            'total_links': total_links,
+            'progress_percent': 100
+        }, block=False)
+    except:
+        pass
+    
     return (download_count, table_count)
 
 def update_sumeventdf(currentsum: pd.DataFrame, orgname: str):
@@ -1259,24 +1286,42 @@ async def update_details_selective_stream(request: UpdateDetailsWithLinksRequest
             thread.start()
             
             # Process real progress updates from the queue
+            processed_links = 0
             while not results['completed']:
                 try:
                     # Check for progress updates with timeout
-                    progress_update = progress_queue.get(timeout=1.0)
+                    progress_update = progress_queue.get(timeout=2.0)
                     
                     if progress_update['type'] == 'progress':
                         current_link = progress_update['current_link']
-                        progress_percent = round((current_link / total_links) * 100, 1)
+                        progress_percent = progress_update['progress_percent']
+                        message = progress_update.get('message', f'正在处理第 {current_link}/{total_links} 个链接 ({progress_percent}%)')
                         
-                        yield f"data: {json.dumps({'type': 'progress', 'orgName': org_name, 'currentLink': current_link, 'totalLinks': total_links, 'progress': progress_percent, 'message': f'正在处理第 {current_link}/{total_links} 个链接 ({progress_percent}%)'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'progress', 'orgName': org_name, 'currentLink': current_link, 'totalLinks': total_links, 'progress': progress_percent, 'message': message})}\n\n"
+                        processed_links = current_link
+                    
+                    elif progress_update['type'] == 'completed':
+                        # Update results with completion data
+                        results['dl_count'] = progress_update.get('download_count', 0)
+                        results['tbl_count'] = progress_update.get('table_count', 0)
+                        results['completed'] = True
+                        # Don't break here, let the main loop handle completion
                     
                     elif progress_update['type'] == 'error':
                         yield f"data: {json.dumps({'type': 'error', 'orgName': org_name, 'error': progress_update['error'], 'message': '更新过程中出现错误'})}\n\n"
                         break
                         
                 except:
-                    # Timeout - continue checking
-                    await asyncio.sleep(0.1)
+                    # Timeout - check if thread is still alive and send heartbeat
+                    if thread.is_alive():
+                        # Send heartbeat with current progress to keep connection alive
+                        if processed_links > 0:
+                            progress_percent = round((processed_links / total_links) * 100, 1)
+                            yield f"data: {json.dumps({'type': 'progress', 'orgName': org_name, 'currentLink': processed_links, 'totalLinks': total_links, 'progress': progress_percent, 'message': f'继续处理中... ({progress_percent}%)'})}\n\n"
+                        await asyncio.sleep(0.5)
+                    else:
+                        # Thread finished but we didn't get completion - break and check results
+                        break
             
             # Wait for completion
             thread.join(timeout=60)  # 60 second timeout
