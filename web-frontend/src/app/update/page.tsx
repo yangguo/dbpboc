@@ -316,17 +316,25 @@ export default function UpdatePage() {
   return (
     <MainLayout>
       <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">案例更新</h1>
-          <p className="text-muted-foreground mt-2">
-            更新各机构的案例列表和详细信息
-          </p>
+      <div className="flex items-center justify-between mb-2">
+        <div className="space-y-2">
+          <div className="flex items-center space-x-3">
+            <div className="p-3 rounded-xl gradient-info animate-float">
+              <RefreshCw className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+                案例更新
+              </h1>
+              <p className="text-muted-foreground text-lg">
+                更新各机构的案例列表和详细信息
+              </p>
+            </div>
+          </div>
         </div>
         <Button
-          variant="outline"
           onClick={refreshPage}
-          className="flex items-center gap-2"
+          className="flex items-center gap-2 gradient-success text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105"
         >
           <RefreshCw className="h-4 w-4" />
           刷新页面
@@ -337,17 +345,20 @@ export default function UpdatePage() {
         {/* Top control panel */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* 机构选择 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Building2 className="h-5 w-5" />
+          <Card className="glass-card border-0 shadow-xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5" />
+            <CardHeader className="relative z-10">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <div className="p-2 rounded-lg gradient-primary">
+                  <Building2 className="h-4 w-4 text-white" />
+                </div>
                 机构选择
               </CardTitle>
               <CardDescription>
                 选择需要更新的机构
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 relative z-10">
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="pending-only"
@@ -370,10 +381,9 @@ export default function UpdatePage() {
 
               <div className="flex gap-2">
                 <Button
-                  variant="outline"
                   size="sm"
                   onClick={selectAllOrgs}
-                  className="flex-1"
+                  className="flex-1 gradient-primary text-white border-0 shadow-md hover:shadow-lg transition-all duration-200"
                 >
                   全选
                 </Button>
@@ -381,9 +391,9 @@ export default function UpdatePage() {
                   variant="outline"
                   size="sm"
                   onClick={clearAllOrgs}
-                  className="flex-1"
+                  className="flex-1 bg-gradient-to-r from-red-500/10 to-red-600/10 hover:from-red-500/20 hover:to-red-600/20 border-red-300 dark:border-red-600 text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium transition-all duration-200"
                 >
-                  清除
+                  取消全选
                 </Button>
               </div>
 
@@ -421,14 +431,20 @@ export default function UpdatePage() {
           </Card>
 
           {/* 页面范围设置 */}
-          <Card>
-            <CardHeader>
-              <CardTitle>页面范围</CardTitle>
+          <Card className="glass-card border-0 shadow-xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-blue-500/5" />
+            <CardHeader className="relative z-10">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <div className="p-2 rounded-lg gradient-success">
+                  <FileText className="h-4 w-4 text-white" />
+                </div>
+                页面范围
+              </CardTitle>
               <CardDescription>
                 设置爬取的页面范围
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 relative z-10">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="start-page">起始页</Label>
@@ -455,32 +471,36 @@ export default function UpdatePage() {
           </Card>
 
           {/* 操作按钮 */}
-          <Card>
-            <CardHeader>
-              <CardTitle>操作</CardTitle>
+          <Card className="glass-card border-0 shadow-xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-pink-500/5" />
+            <CardHeader className="relative z-10">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <div className="p-2 rounded-lg gradient-accent">
+                  <RefreshCw className="h-4 w-4 text-white" />
+                </div>
+                操作
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-3 relative z-10">
               <Button
                 onClick={updateCaseList}
                 disabled={isUpdating || selectedOrgs.length === 0}
-                className="w-full"
+                className="w-full gradient-primary text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
                 <Download className="h-4 w-4 mr-2" />
-                更新列表
+                更新案例列表
               </Button>
               <Button
                 onClick={updateCaseDetails}
                 disabled={isUpdating || detailsProgressState.isActive || selectedOrgs.length === 0}
-                className="w-full"
-                variant="outline"
+                className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:from-gray-400 disabled:to-gray-500"
               >
                 <FileText className="h-4 w-4 mr-2" />
-                更新详情
+                更新案例详情
               </Button>
               <Button
                 onClick={() => window.location.href = '/update/pending'}
-                className="w-full"
-                variant="secondary"
+                className="w-full gradient-accent text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105"
               >
                 <FileText className="h-4 w-4 mr-2" />
                 选择性更新详情
@@ -501,14 +521,20 @@ export default function UpdatePage() {
 
         {/* 更新状态 */}
         <div>
-          <Card>
-            <CardHeader>
-              <CardTitle>更新状态</CardTitle>
+          <Card className="glass-card border-0 shadow-xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 to-red-500/5" />
+            <CardHeader className="relative z-10">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <div className="p-2 rounded-lg gradient-warning">
+                  <FileText className="h-4 w-4 text-white" />
+                </div>
+                更新状态
+              </CardTitle>
               <CardDescription>
                 实时显示各机构的更新进度
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="relative z-10">
               {updateStatuses.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -522,10 +548,11 @@ export default function UpdatePage() {
                         <div className="flex items-center gap-2">
                           <h4 className="font-medium">{status.orgName}</h4>
                           <Badge
-                            variant={
-                              status.status === 'completed' ? 'default' :
-                              status.status === 'error' ? 'destructive' :
-                              status.status === 'updating' ? 'secondary' : 'outline'
+                            className={
+                              status.status === 'completed' ? 'gradient-success text-white border-0 shadow-md' :
+                              status.status === 'error' ? 'gradient-destructive text-white border-0 shadow-md' :
+                              status.status === 'updating' ? 'gradient-info text-white border-0 shadow-md animate-pulse' : 
+                              'bg-gradient-to-r from-gray-500 to-gray-600 text-white border-0 shadow-md'
                             }
                           >
                             {status.status === 'pending' && '等待中'}

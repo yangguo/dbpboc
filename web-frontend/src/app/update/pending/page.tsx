@@ -157,18 +157,26 @@ export default function PendingDetailsPage() {
   return (
     <MainLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">待更新详情</h1>
-            <p className="text-muted-foreground mt-2">
-              查看并选择性更新各机构的待处理案例详情链接
-            </p>
+        <div className="flex items-center justify-between mb-2">
+          <div className="space-y-2">
+            <div className="flex items-center space-x-3">
+              <div className="p-3 rounded-xl gradient-accent animate-float">
+                <FileText className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 bg-clip-text text-transparent">
+                  待更新详情
+                </h1>
+                <p className="text-muted-foreground text-lg">
+                  查看并选择性更新各机构的待处理案例详情链接
+                </p>
+              </div>
+            </div>
           </div>
           <Button
-            variant="outline"
             onClick={refreshPendingDetails}
             disabled={!selectedOrg}
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 gradient-success text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <RefreshCw className="h-4 w-4" />
             刷新列表
@@ -177,47 +185,72 @@ export default function PendingDetailsPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* 机构选择 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Building2 className="h-5 w-5" />
+          <Card className="glass-card border-0 shadow-xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5" />
+            <CardHeader className="relative z-10">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <div className="p-2 rounded-lg gradient-primary">
+                  <Building2 className="h-4 w-4 text-white" />
+                </div>
                 选择机构
               </CardTitle>
               <CardDescription>
                 选择要查看待更新详情的机构
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="relative z-10">
               <div className="space-y-2 max-h-60 overflow-y-auto">
-                {cityList.map((org) => (
-                  <div key={org} className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      id={org}
-                      name="org"
-                      value={org}
-                      checked={selectedOrg === org}
-                      onChange={(e) => handleOrgChange(e.target.value)}
-                      className="w-4 h-4"
-                    />
-                    <Label htmlFor={org} className="text-sm font-medium cursor-pointer">
-                      {org}
-                    </Label>
-                  </div>
-                ))}
+                {cityList.map((org) => {
+                  const isSelected = selectedOrg === org;
+                  return (
+                    <div 
+                      key={org} 
+                      className={`flex items-center space-x-3 p-2 rounded-lg cursor-pointer transition-all duration-200 ${
+                        isSelected 
+                          ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-400/30' 
+                          : 'hover:bg-gradient-to-r hover:from-white/50 hover:to-white/30 dark:hover:from-white/5 dark:hover:to-white/10'
+                      }`}
+                      onClick={() => handleOrgChange(org)}
+                    >
+                      <div className={`relative w-4 h-4 rounded-full border-2 transition-all duration-200 ${
+                        isSelected 
+                          ? 'bg-gradient-to-r from-blue-500 to-purple-600 border-blue-500 shadow-lg shadow-blue-500/30' 
+                          : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800'
+                      }`}>
+                        {isSelected && (
+                          <div className="absolute top-1 left-1 w-2 h-2 bg-white rounded-full" />
+                        )}
+                      </div>
+                      <Label 
+                        htmlFor={org} 
+                        className={`text-sm font-medium cursor-pointer transition-colors duration-200 ${
+                          isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-foreground'
+                        }`}
+                      >
+                        {org}
+                      </Label>
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
 
           {/* 待更新统计 */}
-          <Card>
-            <CardHeader>
-              <CardTitle>待更新统计</CardTitle>
+          <Card className="glass-card border-0 shadow-xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-blue-500/5" />
+            <CardHeader className="relative z-10">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <div className="p-2 rounded-lg gradient-info">
+                  <FileText className="h-4 w-4 text-white" />
+                </div>
+                待更新统计
+              </CardTitle>
               <CardDescription>
                 当前机构的待更新详情统计
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="relative z-10">
               {isLoading ? (
                 <div className="text-center py-4">
                   <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
@@ -249,23 +282,28 @@ export default function PendingDetailsPage() {
           </Card>
 
           {/* 操作按钮 */}
-          <Card>
-            <CardHeader>
-              <CardTitle>操作</CardTitle>
+          <Card className="glass-card border-0 shadow-xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-pink-500/5" />
+            <CardHeader className="relative z-10">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <div className="p-2 rounded-lg gradient-accent">
+                  <Play className="h-4 w-4 text-white" />
+                </div>
+                操作
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-3 relative z-10">
               <Button
                 onClick={toggleSelectAll}
                 disabled={!pendingDetails || pendingDetails.count === 0}
-                variant="outline"
-                className="w-full"
+                className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:from-gray-400 disabled:to-gray-500"
               >
                 {selectedLinks.length === pendingDetails?.pendingLinks.length ? '取消全选' : '全选'}
               </Button>
               <Button
                 onClick={updateSelectedDetails}
                 disabled={progressState.isActive || selectedLinks.length === 0}
-                className="w-full"
+                className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:from-gray-400 disabled:to-gray-500"
               >
                 <Play className="h-4 w-4 mr-2" />
                 更新选中详情
@@ -276,61 +314,96 @@ export default function PendingDetailsPage() {
 
         {/* 待更新链接列表 */}
         {pendingDetails && pendingDetails.count > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>待更新链接列表</CardTitle>
+          <Card className="glass-card border-0 shadow-xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5" />
+            <CardHeader className="relative z-10">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <div className="p-2 rounded-lg gradient-primary">
+                  <ExternalLink className="h-4 w-4 text-white" />
+                </div>
+                待更新链接列表
+              </CardTitle>
               <CardDescription>
                 {pendingDetails.orgName} - 共 {pendingDetails.count} 个待更新链接
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="mb-3 text-sm text-muted-foreground border-b pb-2">
-                <div className="grid grid-cols-12 gap-2 font-medium">
-                  <div className="col-span-1">选择</div>
-                  <div className="col-span-8">案例信息</div>
-                  <div className="col-span-2">日期</div>
-                  <div className="col-span-1">链接</div>
+            <CardContent className="relative z-10">
+              <div className="mb-4 p-3 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg border">
+                <div className="grid grid-cols-12 gap-3 font-semibold text-sm">
+                  <div className="col-span-1 text-center text-blue-600 dark:text-blue-400">选择</div>
+                  <div className="col-span-8 text-gray-700 dark:text-gray-300">案例信息</div>
+                  <div className="col-span-2 text-gray-700 dark:text-gray-300">日期</div>
+                  <div className="col-span-1 text-center text-gray-700 dark:text-gray-300">操作</div>
                 </div>
               </div>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {pendingDetails.pendingLinks.map((linkDetail, index) => (
-                  <div key={index} className="grid grid-cols-12 gap-2 items-center p-3 border rounded-lg hover:bg-muted/50">
-                    <div className="col-span-1">
-                      <Checkbox
-                        id={`link-${index}`}
-                        checked={selectedLinks.includes(linkDetail.link)}
-                        onCheckedChange={(checked) => handleLinkSelection(linkDetail.link, checked as boolean)}
-                      />
-                    </div>
-                    <div className="col-span-8 min-w-0 space-y-1">
-                      {linkDetail.name && (
-                        <div className="font-medium text-sm truncate" title={linkDetail.name}>
-                          {linkDetail.name}
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {pendingDetails.pendingLinks.map((linkDetail, index) => {
+                  const isSelected = selectedLinks.includes(linkDetail.link);
+                  return (
+                    <div 
+                      key={index} 
+                      className={`grid grid-cols-12 gap-3 items-center p-4 rounded-xl transition-all duration-200 cursor-pointer group ${
+                        isSelected 
+                          ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 border-2 border-blue-400/30 shadow-md' 
+                          : 'bg-gradient-to-r from-white/50 to-white/30 dark:from-white/5 dark:to-white/10 hover:from-white/70 hover:to-white/50 dark:hover:from-white/10 dark:hover:to-white/15 border border-white/20 hover:border-blue-300/50'
+                      }`}
+                      onClick={() => handleLinkSelection(linkDetail.link, !isSelected)}
+                    >
+                      <div className="col-span-1 flex justify-center">
+                        <div className={`relative w-5 h-5 rounded border-2 transition-all duration-200 ${
+                          isSelected 
+                            ? 'bg-gradient-to-r from-blue-500 to-purple-600 border-blue-500 shadow-lg shadow-blue-500/30' 
+                            : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 group-hover:border-blue-400 group-hover:shadow-md'
+                        }`}>
+                          {isSelected && (
+                            <svg className="w-3 h-3 text-white absolute top-0.5 left-0.5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          )}
                         </div>
-                      )}
-                      <Label 
-                        htmlFor={`link-${index}`} 
-                        className="text-xs font-mono cursor-pointer truncate block text-muted-foreground"
-                        title={linkDetail.link}
-                      >
-                        {linkDetail.link}
-                      </Label>
+                      </div>
+                      <div className="col-span-8 min-w-0 space-y-1">
+                        {linkDetail.name && (
+                          <div className={`font-medium text-sm truncate transition-colors duration-200 ${
+                            isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-foreground'
+                          }`} title={linkDetail.name}>
+                            {linkDetail.name}
+                          </div>
+                        )}
+                        <div 
+                          className={`text-xs font-mono truncate block transition-colors duration-200 ${
+                            isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'
+                          }`}
+                          title={linkDetail.link}
+                        >
+                          {linkDetail.link}
+                        </div>
+                      </div>
+                      <div className={`col-span-2 text-xs transition-colors duration-200 ${
+                        isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'
+                      }`}>
+                        {linkDetail.date || '-'}
+                      </div>
+                      <div className="col-span-1 flex justify-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(linkDetail.link, '_blank');
+                          }}
+                          className={`h-8 w-8 p-0 transition-all duration-200 ${
+                            isSelected 
+                              ? 'hover:bg-blue-500/20 text-blue-600 dark:text-blue-400' 
+                              : 'hover:bg-gray-500/20 text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="col-span-2 text-xs text-muted-foreground">
-                      {linkDetail.date || '-'}
-                    </div>
-                    <div className="col-span-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => window.open(linkDetail.link, '_blank')}
-                        className="h-8 w-8 p-0"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
