@@ -12,6 +12,8 @@ import { Progress } from '@/components/ui/progress'
 import { RefreshCw, Download, FileText, Building2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { MainLayout } from '@/components/layout/main-layout'
+import { useProgressStream } from '@/lib/hooks/use-progress-stream'
+import { ProgressTracker } from '@/components/ui/progress-tracker'
 
 // 城市列表 - 与后端 org2url 顺序保持一致
 const cityList = [
@@ -54,6 +56,9 @@ export default function UpdatePage() {
   const [updateStatuses, setUpdateStatuses] = useState<UpdateStatus[]>([])
   const [pendingOrgs, setPendingOrgs] = useState<string[]>([])
   const [orgStats, setOrgStats] = useState<Record<string, OrgStats>>({});
+  
+  // Add progress stream for details update
+  const { state: detailsProgressState, startStream: startDetailsStream, stopStream: stopDetailsStream, resetState: resetDetailsState } = useProgressStream()
 
   // 获取待更新机构列表
   const fetchPendingOrgs = async () => {
@@ -201,13 +206,25 @@ export default function UpdatePage() {
     }
   }
 
-  // 更新案例详情
+  // 更新案例详情 - 使用新的进度跟踪
   const updateCaseDetails = async () => {
     if (selectedOrgs.length === 0) {
       toast.error('请选择至少一个机构')
       return
     }
 
+    if (selectedOrgs.length === 1) {
+      // For single org, use the progress stream
+      try {
+        await startDetailsStream(selectedOrgs[0], []) // Empty array means update all pending
+      } catch (error) {
+        console.error('Update failed:', error)
+        toast.error('案例详情更新失败')
+      }
+      return
+    }
+
+    // For multiple orgs, use the original batch method
     setIsUpdating(true)
     setUpdateStatuses(selectedOrgs.map(org => ({
       orgName: org,
@@ -273,6 +290,15 @@ export default function UpdatePage() {
     }
   }
 
+  // Handle details progress completion
+  useEffect(() => {
+    if (detailsProgressState.progress === 100 && !detailsProgressState.error && detailsProgressState.orgName) {
+      toast.success('案例详情更新完成')
+    } else if (detailsProgressState.error) {
+      toast.error('案例详情更新失败')
+    }
+  }, [detailsProgressState.progress, detailsProgressState.error, detailsProgressState.orgName])
+
   // 刷新页面
   const refreshPage = () => {
     setSelectedOrgs([])
@@ -280,6 +306,7 @@ export default function UpdatePage() {
     setStartPage(1)
     setEndPage(1)
     setShowPendingOnly(false)
+    resetDetailsState() // Reset details progress state
     fetchPendingOrgs()
     toast.success('页面已刷新')
   }
@@ -443,7 +470,7 @@ export default function UpdatePage() {
               </Button>
               <Button
                 onClick={updateCaseDetails}
-                disabled={isUpdating || selectedOrgs.length === 0}
+                disabled={isUpdating || detailsProgressState.isActive || selectedOrgs.length === 0}
                 className="w-full"
                 variant="outline"
               >
@@ -461,6 +488,16 @@ export default function UpdatePage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* 详情更新进度跟踪 */}
+        {(detailsProgressState.isActive || detailsProgressState.progress > 0 || detailsProgressState.error) && (
+          <ProgressTracker
+            state={detailsProgressState}
+            onCancel={stopDetailsStream}
+            onReset={resetDetailsState}
+            showDetails={true}
+          />
+        )}
 
         {/* 更新状态 */}
         <div>

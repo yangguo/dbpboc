@@ -11,6 +11,8 @@ import { Label } from '@/components/ui/label'
 import { RefreshCw, FileText, Building2, ExternalLink, Play } from 'lucide-react'
 import { toast } from 'sonner'
 import { MainLayout } from '@/components/layout/main-layout'
+import { useProgressStream } from '@/lib/hooks/use-progress-stream'
+import { ProgressTracker } from '@/components/ui/progress-tracker'
 
 // 城市列表
 const cityList = [
@@ -33,21 +35,14 @@ interface PendingDetail {
   count: number
 }
 
-interface UpdateStatus {
-  orgName: string
-  status: 'pending' | 'updating' | 'completed' | 'error'
-  progress: number
-  message: string
-  updatedCases: number
-}
-
 export default function PendingDetailsPage() {
   const [selectedOrg, setSelectedOrg] = useState<string>('')
   const [pendingDetails, setPendingDetails] = useState<PendingDetail | null>(null)
   const [selectedLinks, setSelectedLinks] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [isUpdating, setIsUpdating] = useState(false)
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
+  
+  // Use the progress stream hook
+  const { state: progressState, startStream, stopStream, resetState, retryStream } = useProgressStream()
 
   // 获取待更新详情链接
   const fetchPendingDetails = async (orgName: string) => {
@@ -78,7 +73,7 @@ export default function PendingDetailsPage() {
     setSelectedOrg(orgName)
     setPendingDetails(null)
     setSelectedLinks([])
-    setUpdateStatus(null)
+    resetState() // Reset progress state
     if (orgName) {
       fetchPendingDetails(orgName)
     }
@@ -112,62 +107,50 @@ export default function PendingDetailsPage() {
       return
     }
 
-    setIsUpdating(true)
-    setUpdateStatus({
-      orgName: selectedOrg,
-      status: 'updating',
-      progress: 0,
-      message: '正在更新案例详情...',
-      updatedCases: 0
-    })
-
     try {
-      const response = await fetch('/api/v1/cases/update-details-selective', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          orgName: selectedOrg,
-          selectedLinks: selectedLinks
-        })
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setUpdateStatus({
-          orgName: selectedOrg,
-          status: 'completed',
-          progress: 100,
-          message: `详情更新完成，处理 ${data.updatedCases} 条案例`,
-          updatedCases: data.updatedCases
-        })
+      await startStream(selectedOrg, selectedLinks)
+      
+      // Show success toast when completed
+      if (progressState.progress === 100 && !progressState.error) {
         toast.success('案例详情更新完成')
-        
-        // 刷新待更新列表
+        // Refresh pending details list
         fetchPendingDetails(selectedOrg)
-      } else {
-        throw new Error('更新失败')
       }
     } catch (error) {
-      setUpdateStatus({
-        orgName: selectedOrg,
-        status: 'error',
-        progress: 0,
-        message: '更新失败',
-        updatedCases: 0
-      })
+      console.error('Update failed:', error)
       toast.error('案例详情更新失败')
-    } finally {
-      setIsUpdating(false)
     }
   }
+
+  // 重试更新
+  const handleRetry = async () => {
+    if (!selectedOrg) return
+    
+    try {
+      // Use the same selected links for retry
+      await startStream(selectedOrg, selectedLinks)
+    } catch (error) {
+      console.error('Retry failed:', error)
+      toast.error('重试失败')
+    }
+  }
+
+  // Handle progress completion
+  useEffect(() => {
+    if (progressState.progress === 100 && !progressState.error && progressState.orgName) {
+      toast.success('案例详情更新完成')
+      // Refresh pending details list
+      fetchPendingDetails(selectedOrg)
+    } else if (progressState.error) {
+      toast.error('案例详情更新失败')
+    }
+  }, [progressState.progress, progressState.error, progressState.orgName, selectedOrg])
 
   // 刷新当前机构的待更新列表
   const refreshPendingDetails = () => {
     if (selectedOrg) {
       fetchPendingDetails(selectedOrg)
-      setUpdateStatus(null)
+      resetState()
     }
   }
 
@@ -281,7 +264,7 @@ export default function PendingDetailsPage() {
               </Button>
               <Button
                 onClick={updateSelectedDetails}
-                disabled={isUpdating || selectedLinks.length === 0}
+                disabled={progressState.isActive || selectedLinks.length === 0}
                 className="w-full"
               >
                 <Play className="h-4 w-4 mr-2" />
@@ -354,40 +337,14 @@ export default function PendingDetailsPage() {
         )}
 
         {/* 更新状态 */}
-        {updateStatus && (
-          <Card>
-            <CardHeader>
-              <CardTitle>更新状态</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-medium">{updateStatus.orgName}</h4>
-                    <Badge
-                      variant={
-                        updateStatus.status === 'completed' ? 'default' :
-                        updateStatus.status === 'error' ? 'destructive' :
-                        updateStatus.status === 'updating' ? 'secondary' : 'outline'
-                      }
-                    >
-                      {updateStatus.status === 'pending' && '等待中'}
-                      {updateStatus.status === 'updating' && '更新中'}
-                      {updateStatus.status === 'completed' && '已完成'}
-                      {updateStatus.status === 'error' && '失败'}
-                    </Badge>
-                  </div>
-                  {updateStatus.updatedCases > 0 && (
-                    <span className="text-sm text-muted-foreground">
-                      {updateStatus.updatedCases} 条
-                    </span>
-                  )}
-                </div>
-                <Progress value={updateStatus.progress} className="h-2" />
-                <p className="text-sm text-muted-foreground">{updateStatus.message}</p>
-              </div>
-            </CardContent>
-          </Card>
+        {(progressState.isActive || progressState.progress > 0 || progressState.error) && (
+          <ProgressTracker
+            state={progressState}
+            onCancel={stopStream}
+            onReset={resetState}
+            onRetry={handleRetry}
+            showDetails={true}
+          />
         )}
       </div>
     </MainLayout>

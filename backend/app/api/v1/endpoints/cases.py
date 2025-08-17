@@ -561,6 +561,8 @@ def web2table(rows):
 
 def scrape_detail_pages(links, orgname: str):
     """Scrape detail pages for download links and raw text content; save to temp subfolder.
+    
+    Saves temporary files every 10 records for both pboctotable and pboctodownload.
 
     Returns tuple (download_count, content_count).
     """
@@ -573,11 +575,20 @@ def scrape_detail_pages(links, orgname: str):
     browser = get_chrome_driver(TEMP_PATH)
     download_frames = []
     table_frames = []
+    
+    # Counters for temp file saving
+    processed_count = 0
+    temp_file_counter = 1
 
+    total_links = len(links)
+    
     try:
         for idx, durl in enumerate(links):
+            current_progress = idx + 1
+            progress_percent = round((current_progress / total_links) * 100, 1)
+            
             try:
-                logger.info(f"[update-details] fetching url={durl}")
+                logger.info(f"[update-details] PROGRESS {current_progress}/{total_links} ({progress_percent}%) org={orgname} fetching url={durl}")
                 browser.get(durl)
                 # Collect download anchors
                 dl_anchors = browser.find_elements(By.XPATH, "//td[@class='hei14jj']//a")
@@ -587,7 +598,7 @@ def scrape_detail_pages(links, orgname: str):
                     if href:
                         downurl.append(href)
                 if downurl:
-                    logger.info(f"[update-details] downloads_found url={durl} count={len(downurl)}")
+                    logger.info(f"[update-details] downloads_found progress={current_progress}/{total_links} url={durl} count={len(downurl)}")
                     df_dl = pd.DataFrame({"download": downurl})
                     df_dl["link"] = durl
                     download_frames.append(df_dl)
@@ -643,47 +654,418 @@ def scrape_detail_pages(links, orgname: str):
                             })
                             
                             logger.info(
-                                f"[update-details] content_found url={durl} length={len(raw_content)}"
+                                f"[update-details] content_found progress={current_progress}/{total_links} url={durl} length={len(raw_content)}"
                             )
                             table_frames.append(df_tbl)
                     else:
-                        logger.info(f"[update-details] download_only_page url={durl}")
+                        logger.info(f"[update-details] download_only_page progress={current_progress}/{total_links} url={durl}")
                         
                 except Exception as content_error:
-                    logger.info(f"[update-details] content_extraction_error url={durl} err={content_error}")
+                    logger.info(f"[update-details] content_extraction_error progress={current_progress}/{total_links} url={durl} err={content_error}")
+
+                # Increment processed count
+                processed_count += 1
+                
+                # Save temp files every 10 records
+                if processed_count % 10 == 0:
+                    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                    
+                    # Save download temp file if we have download data
+                    if download_frames:
+                        dres = pd.concat(download_frames).reset_index(drop=True)
+                        temp_filename = f"temp_pboctodownload{org_name_index}_{temp_file_counter}_{timestamp}"
+                        savetempsub(dres, temp_filename, org_name_index)
+                        logger.info(f"[update-details] TEMP_SAVE progress={current_progress}/{total_links} org={orgname} downloads={len(dres)} file={temp_filename}")
+                    
+                    # Save table temp file if we have table data
+                    if table_frames:
+                        tres = pd.concat(table_frames).reset_index(drop=True)
+                        temp_filename = f"temp_pboctotable{org_name_index}_{temp_file_counter}_{timestamp}"
+                        savetempsub(tres, temp_filename, org_name_index)
+                        logger.info(f"[update-details] TEMP_SAVE progress={current_progress}/{total_links} org={orgname} content={len(tres)} file={temp_filename}")
+                    
+                    temp_file_counter += 1
 
                 # Pace to be gentle
                 time.sleep(random.randint(2, 5))
             except TimeoutException as e:
-                logger.info(f"[update-details] page_timeout url={durl} err=Page load timeout after 45s")
+                logger.info(f"[update-details] page_timeout progress={current_progress}/{total_links} url={durl} err=Page load timeout after 45s")
                 continue
             except WebDriverException as e:
-                logger.info(f"[update-details] page_error url={durl} err=WebDriver error: {e}")
+                logger.info(f"[update-details] page_error progress={current_progress}/{total_links} url={durl} err=WebDriver error: {e}")
                 continue
             except Exception as e:
-                logger.info(f"[update-details] page_error url={durl} err={e}")
+                logger.info(f"[update-details] page_error progress={current_progress}/{total_links} url={durl} err={e}")
                 continue
     finally:
         browser.quit()
 
-    # Save intermediate results under temp/<org>
+    # Save final results under temp/<org>
     download_count = 0
     table_count = 0
-    # Generate timestamp for both download and table files
+    # Generate timestamp for final files
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     
     if download_frames:
         dres = pd.concat(download_frames).reset_index(drop=True)
         savetempsub(dres, f"pboctodownload{org_name_index}{timestamp}", org_name_index)
         download_count = len(dres)
-        logger.info(f"[update-details] saved_downloads org={orgname} count={download_count} ts={timestamp}")
+        logger.info(f"[update-details] FINAL_SAVE org={orgname} downloads={download_count} processed={total_links} ts={timestamp}")
     if table_frames:
         tres = pd.concat(table_frames).reset_index(drop=True)
         # keep historical saves timestamped similar to legacy
         savetempsub(tres, f"pboctotable{org_name_index}{timestamp}", org_name_index)
         table_count = len(tres)
-        logger.info(f"[update-details] saved_content org={orgname} count={table_count} ts={timestamp}")
+        logger.info(f"[update-details] FINAL_SAVE org={orgname} content={table_count} processed={total_links} ts={timestamp}")
 
+    logger.info(f"[update-details] PROCESSING_COMPLETE org={orgname} total_processed={total_links} downloads={download_count} content={table_count}")
+    return (download_count, table_count)
+
+async def scrape_detail_pages_with_progress(links, orgname: str, generate_progress_callback):
+    """Scrape detail pages with real-time progress updates via callback.
+    
+    Saves temporary files every 10 records for both pboctotable and pboctodownload.
+    Yields progress updates for each processed link.
+
+    Returns tuple (download_count, content_count).
+    """
+    org_name_index = org2name.get(orgname)
+    if not org_name_index:
+        return (0, 0)
+    if not links:
+        return (0, 0)
+
+    browser = get_chrome_driver(TEMP_PATH)
+    download_frames = []
+    table_frames = []
+    
+    # Counters for temp file saving
+    processed_count = 0
+    temp_file_counter = 1
+    total_links = len(links)
+
+    try:
+        for idx, durl in enumerate(links):
+            current_progress = idx + 1
+            progress_percent = round((current_progress / total_links) * 100, 1)
+            
+            try:
+                # Send progress update
+                progress_message = f"正在处理第 {current_progress}/{total_links} 个链接 ({progress_percent}%)"
+                logger.info(f"[update-details-stream] PROGRESS {current_progress}/{total_links} ({progress_percent}%) org={orgname} fetching url={durl}")
+                
+                # Note: In a real streaming implementation, we would yield this progress
+                # For now, we'll log it and the frontend will simulate based on this
+                
+                browser.get(durl)
+                # Collect download anchors
+                dl_anchors = browser.find_elements(By.XPATH, "//td[@class='hei14jj']//a")
+                downurl = []
+                for a in dl_anchors:
+                    href = a.get_attribute("href")
+                    if href:
+                        downurl.append(href)
+                if downurl:
+                    logger.info(f"[update-details-stream] downloads_found progress={current_progress}/{total_links} url={durl} count={len(downurl)}")
+                    df_dl = pd.DataFrame({"download": downurl})
+                    df_dl["link"] = durl
+                    download_frames.append(df_dl)
+
+                # Extract raw text content from the page only if it has meaningful content beyond download links
+                has_meaningful_content = False
+                try:
+                    # Check if page has table/content structure beyond just download links
+                    if org_name_index == "zongbu":
+                        # For headquarters, check if there are table rows with actual data
+                        table_rows = browser.find_elements(By.XPATH, "//table/tbody/tr")
+                        if table_rows and len(table_rows) > 0:
+                            # Check if any row has meaningful text (not just download links)
+                            for row in table_rows[:3]:  # Check first few rows
+                                row_text = row.text.strip()
+                                if row_text and len(row_text) > 20:  # Meaningful content threshold
+                                    has_meaningful_content = True
+                                    break
+                    else:
+                        # For regional branches, check content in hei14jj class
+                        content_element = browser.find_element(By.XPATH, "//td[@class='hei14jj']")
+                        
+                        # Check if there are table rows or structured content
+                        table_rows = content_element.find_elements(By.XPATH, ".//tr")
+                        if table_rows and len(table_rows) > 1:  # More than just header
+                            has_meaningful_content = True
+                        else:
+                            # Check for other meaningful content (not just links)
+                            content_text = content_element.text.strip()
+                            # Remove download link text patterns to see if there's other content
+                            if content_text and len(content_text) > 50:  # Threshold for meaningful content
+                                # Check if it's not just a list of download links
+                                lines = content_text.split('\n')
+                                meaningful_lines = [line for line in lines if line.strip() and 
+                                                  not line.strip().startswith('http') and 
+                                                  '下载' not in line and '文件' not in line]
+                                if len(meaningful_lines) > 2:
+                                    has_meaningful_content = True
+                    
+                    # Only extract and save content if it has meaningful data
+                    if has_meaningful_content:
+                        if org_name_index == "zongbu":
+                            content_element = browser.find_element(By.XPATH, "//table/tbody")
+                        else:
+                            content_element = browser.find_element(By.XPATH, "//td[@class='hei14jj']")
+                        
+                        raw_content = content_element.text.strip()
+                        
+                        if raw_content:
+                            df_tbl = pd.DataFrame({
+                                "content": [raw_content],
+                                "link": [durl]
+                            })
+                            
+                            logger.info(
+                                f"[update-details-stream] content_found progress={current_progress}/{total_links} url={durl} length={len(raw_content)}"
+                            )
+                            table_frames.append(df_tbl)
+                    else:
+                        logger.info(f"[update-details-stream] download_only_page progress={current_progress}/{total_links} url={durl}")
+                        
+                except Exception as content_error:
+                    logger.info(f"[update-details-stream] content_extraction_error progress={current_progress}/{total_links} url={durl} err={content_error}")
+
+                # Increment processed count
+                processed_count += 1
+                
+                # Save temp files every 10 records
+                if processed_count % 10 == 0:
+                    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                    
+                    # Save download temp file if we have download data
+                    if download_frames:
+                        dres = pd.concat(download_frames).reset_index(drop=True)
+                        temp_filename = f"temp_pboctodownload{org_name_index}_{temp_file_counter}_{timestamp}"
+                        savetempsub(dres, temp_filename, org_name_index)
+                        logger.info(f"[update-details-stream] TEMP_SAVE progress={current_progress}/{total_links} org={orgname} downloads={len(dres)} file={temp_filename}")
+                    
+                    # Save table temp file if we have table data
+                    if table_frames:
+                        tres = pd.concat(table_frames).reset_index(drop=True)
+                        temp_filename = f"temp_pboctotable{org_name_index}_{temp_file_counter}_{timestamp}"
+                        savetempsub(tres, temp_filename, org_name_index)
+                        logger.info(f"[update-details-stream] TEMP_SAVE progress={current_progress}/{total_links} org={orgname} content={len(tres)} file={temp_filename}")
+                    
+                    temp_file_counter += 1
+
+                # Pace to be gentle
+                time.sleep(random.randint(2, 5))
+            except TimeoutException as e:
+                logger.info(f"[update-details-stream] page_timeout progress={current_progress}/{total_links} url={durl} err=Page load timeout after 45s")
+                continue
+            except WebDriverException as e:
+                logger.info(f"[update-details-stream] page_error progress={current_progress}/{total_links} url={durl} err=WebDriver error: {e}")
+                continue
+            except Exception as e:
+                logger.info(f"[update-details-stream] page_error progress={current_progress}/{total_links} url={durl} err={e}")
+                continue
+    finally:
+        browser.quit()
+
+    # Save final results under temp/<org>
+    download_count = 0
+    table_count = 0
+    # Generate timestamp for final files
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    
+    if download_frames:
+        dres = pd.concat(download_frames).reset_index(drop=True)
+        savetempsub(dres, f"pboctodownload{org_name_index}{timestamp}", org_name_index)
+        download_count = len(dres)
+        logger.info(f"[update-details-stream] FINAL_SAVE org={orgname} downloads={download_count} processed={total_links} ts={timestamp}")
+    if table_frames:
+        tres = pd.concat(table_frames).reset_index(drop=True)
+        # keep historical saves timestamped similar to legacy
+        savetempsub(tres, f"pboctotable{org_name_index}{timestamp}", org_name_index)
+        table_count = len(tres)
+        logger.info(f"[update-details-stream] FINAL_SAVE org={orgname} content={table_count} processed={total_links} ts={timestamp}")
+
+    logger.info(f"[update-details-stream] PROCESSING_COMPLETE org={orgname} total_processed={total_links} downloads={download_count} content={table_count}")
+    return (download_count, table_count)
+
+def scrape_detail_pages_with_progress_queue(links, orgname: str, progress_queue_id: str):
+    """Scrape detail pages with real-time progress updates via queue.
+    
+    Saves temporary files every 10 records for both pboctotable and pboctodownload.
+    Sends progress updates for each processed link via queue.
+
+    Returns tuple (download_count, content_count).
+    """
+    org_name_index = org2name.get(orgname)
+    if not org_name_index:
+        return (0, 0)
+    if not links:
+        return (0, 0)
+
+    # Get the progress queue
+    progress_queue = progress_queues.get(progress_queue_id)
+    if not progress_queue:
+        return (0, 0)
+
+    browser = get_chrome_driver(TEMP_PATH)
+    download_frames = []
+    table_frames = []
+    
+    # Counters for temp file saving
+    processed_count = 0
+    temp_file_counter = 1
+    total_links = len(links)
+
+    try:
+        for idx, durl in enumerate(links):
+            current_progress = idx + 1
+            progress_percent = round((current_progress / total_links) * 100, 1)
+            
+            # Send real progress update via queue
+            try:
+                progress_queue.put({
+                    'type': 'progress',
+                    'current_link': current_progress,
+                    'total_links': total_links,
+                    'progress_percent': progress_percent
+                })
+            except:
+                pass  # Queue might be full or closed
+            
+            try:
+                logger.info(f"[update-details-queue] PROGRESS {current_progress}/{total_links} ({progress_percent}%) org={orgname} fetching url={durl}")
+                
+                browser.get(durl)
+                # Collect download anchors
+                dl_anchors = browser.find_elements(By.XPATH, "//td[@class='hei14jj']//a")
+                downurl = []
+                for a in dl_anchors:
+                    href = a.get_attribute("href")
+                    if href:
+                        downurl.append(href)
+                if downurl:
+                    logger.info(f"[update-details-queue] downloads_found progress={current_progress}/{total_links} url={durl} count={len(downurl)}")
+                    df_dl = pd.DataFrame({"download": downurl})
+                    df_dl["link"] = durl
+                    download_frames.append(df_dl)
+
+                # Extract raw text content from the page only if it has meaningful content beyond download links
+                has_meaningful_content = False
+                try:
+                    # Check if page has table/content structure beyond just download links
+                    if org_name_index == "zongbu":
+                        # For headquarters, check if there are table rows with actual data
+                        table_rows = browser.find_elements(By.XPATH, "//table/tbody/tr")
+                        if table_rows and len(table_rows) > 0:
+                            # Check if any row has meaningful text (not just download links)
+                            for row in table_rows[:3]:  # Check first few rows
+                                row_text = row.text.strip()
+                                if row_text and len(row_text) > 20:  # Meaningful content threshold
+                                    has_meaningful_content = True
+                                    break
+                    else:
+                        # For regional branches, check content in hei14jj class
+                        content_element = browser.find_element(By.XPATH, "//td[@class='hei14jj']")
+                        
+                        # Check if there are table rows or structured content
+                        table_rows = content_element.find_elements(By.XPATH, ".//tr")
+                        if table_rows and len(table_rows) > 1:  # More than just header
+                            has_meaningful_content = True
+                        else:
+                            # Check for other meaningful content (not just links)
+                            content_text = content_element.text.strip()
+                            # Remove download link text patterns to see if there's other content
+                            if content_text and len(content_text) > 50:  # Threshold for meaningful content
+                                # Check if it's not just a list of download links
+                                lines = content_text.split('\n')
+                                meaningful_lines = [line for line in lines if line.strip() and 
+                                                  not line.strip().startswith('http') and 
+                                                  '下载' not in line and '文件' not in line]
+                                if len(meaningful_lines) > 2:
+                                    has_meaningful_content = True
+                    
+                    # Only extract and save content if it has meaningful data
+                    if has_meaningful_content:
+                        if org_name_index == "zongbu":
+                            content_element = browser.find_element(By.XPATH, "//table/tbody")
+                        else:
+                            content_element = browser.find_element(By.XPATH, "//td[@class='hei14jj']")
+                        
+                        raw_content = content_element.text.strip()
+                        
+                        if raw_content:
+                            df_tbl = pd.DataFrame({
+                                "content": [raw_content],
+                                "link": [durl]
+                            })
+                            
+                            logger.info(
+                                f"[update-details-queue] content_found progress={current_progress}/{total_links} url={durl} length={len(raw_content)}"
+                            )
+                            table_frames.append(df_tbl)
+                    else:
+                        logger.info(f"[update-details-queue] download_only_page progress={current_progress}/{total_links} url={durl}")
+                        
+                except Exception as content_error:
+                    logger.info(f"[update-details-queue] content_extraction_error progress={current_progress}/{total_links} url={durl} err={content_error}")
+
+                # Increment processed count
+                processed_count += 1
+                
+                # Save temp files every 10 records
+                if processed_count % 10 == 0:
+                    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                    
+                    # Save download temp file if we have download data
+                    if download_frames:
+                        dres = pd.concat(download_frames).reset_index(drop=True)
+                        temp_filename = f"temp_pboctodownload{org_name_index}_{temp_file_counter}_{timestamp}"
+                        savetempsub(dres, temp_filename, org_name_index)
+                        logger.info(f"[update-details-queue] TEMP_SAVE progress={current_progress}/{total_links} org={orgname} downloads={len(dres)} file={temp_filename}")
+                    
+                    # Save table temp file if we have table data
+                    if table_frames:
+                        tres = pd.concat(table_frames).reset_index(drop=True)
+                        temp_filename = f"temp_pboctotable{org_name_index}_{temp_file_counter}_{timestamp}"
+                        savetempsub(tres, temp_filename, org_name_index)
+                        logger.info(f"[update-details-queue] TEMP_SAVE progress={current_progress}/{total_links} org={orgname} content={len(tres)} file={temp_filename}")
+                    
+                    temp_file_counter += 1
+
+                # Pace to be gentle
+                time.sleep(random.randint(2, 5))
+            except TimeoutException as e:
+                logger.info(f"[update-details-queue] page_timeout progress={current_progress}/{total_links} url={durl} err=Page load timeout after 45s")
+                continue
+            except WebDriverException as e:
+                logger.info(f"[update-details-queue] page_error progress={current_progress}/{total_links} url={durl} err=WebDriver error: {e}")
+                continue
+            except Exception as e:
+                logger.info(f"[update-details-queue] page_error progress={current_progress}/{total_links} url={durl} err={e}")
+                continue
+    finally:
+        browser.quit()
+
+    # Save final results under temp/<org>
+    download_count = 0
+    table_count = 0
+    # Generate timestamp for final files
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    
+    if download_frames:
+        dres = pd.concat(download_frames).reset_index(drop=True)
+        savetempsub(dres, f"pboctodownload{org_name_index}{timestamp}", org_name_index)
+        download_count = len(dres)
+        logger.info(f"[update-details-queue] FINAL_SAVE org={orgname} downloads={download_count} processed={total_links} ts={timestamp}")
+    if table_frames:
+        tres = pd.concat(table_frames).reset_index(drop=True)
+        # keep historical saves timestamped similar to legacy
+        savetempsub(tres, f"pboctotable{org_name_index}{timestamp}", org_name_index)
+        table_count = len(tres)
+        logger.info(f"[update-details-queue] FINAL_SAVE org={orgname} content={table_count} processed={total_links} ts={timestamp}")
+
+    logger.info(f"[update-details-queue] PROCESSING_COMPLETE org={orgname} total_processed={total_links} downloads={download_count} content={table_count}")
     return (download_count, table_count)
 
 def update_sumeventdf(currentsum: pd.DataFrame, orgname: str):
@@ -779,21 +1161,123 @@ async def update_details_selective(request: UpdateDetailsWithLinksRequest):
         links_to_update = all_pending_links
     
     link_count = len(links_to_update)
-    logger.info(f"[update-details-selective] org={org_name} links_to_update={link_count}")
+    logger.info(f"[update-details-selective] STARTED org={org_name} total_links={link_count} selected_links={len(request.selectedLinks) if request.selectedLinks else 'all'}")
     
     if not links_to_update:
         elapsed_ms = int((time.time() - started_at) * 1000)
         logger.info(
-            f"[update-details-selective] org={org_name} updated_cases=0 downloads=0 tables=0 elapsed_ms={elapsed_ms}"
+            f"[update-details-selective] COMPLETED org={org_name} updated_cases=0 downloads=0 tables=0 elapsed_ms={elapsed_ms}"
         )
         return {"updatedCases": 0}
     
     dl_count, tbl_count = scrape_detail_pages(links_to_update, org_name)
     elapsed_ms = int((time.time() - started_at) * 1000)
     logger.info(
-        f"[update-details-selective] org={org_name} updated_cases={link_count} downloads={dl_count} tables={tbl_count} elapsed_ms={elapsed_ms}"
+        f"[update-details-selective] COMPLETED org={org_name} updated_cases={link_count} downloads={dl_count} tables={tbl_count} elapsed_ms={elapsed_ms}"
     )
     return {"updatedCases": link_count, "downloads": dl_count, "tables": tbl_count}
+
+from fastapi.responses import StreamingResponse
+import json
+import asyncio
+import threading
+from queue import Queue
+
+# Global progress tracking
+progress_queues = {}
+
+@router.post("/update-details-selective-stream")
+async def update_details_selective_stream(request: UpdateDetailsWithLinksRequest):
+    """Update details for selected links with real-time progress streaming."""
+    org_name = request.orgName
+    if not org2name.get(org_name):
+        raise HTTPException(status_code=400, detail="Invalid organization name")
+    
+    # Get all pending links
+    all_pending_links = get_new_links_for_org(org_name)
+    
+    # Use selected links if provided, otherwise use all pending
+    if request.selectedLinks:
+        links_to_update = [link for link in request.selectedLinks if link in all_pending_links]
+    else:
+        links_to_update = all_pending_links
+    
+    total_links = len(links_to_update)
+    
+    # Create a unique progress queue for this request
+    progress_queue_id = f"{org_name}_{int(time.time())}"
+    progress_queue = Queue()
+    progress_queues[progress_queue_id] = progress_queue
+    
+    async def generate_progress():
+        try:
+            # Send start event
+            yield f"data: {json.dumps({'type': 'start', 'orgName': org_name, 'totalLinks': total_links, 'message': f'开始更新案例详情... (共 {total_links} 个链接)'})}\n\n"
+            
+            if not links_to_update:
+                yield f"data: {json.dumps({'type': 'complete', 'orgName': org_name, 'updatedCases': 0, 'downloads': 0, 'tables': 0, 'message': '没有待更新的链接'})}\n\n"
+                return
+            
+            # This will hold the final results
+            results = {'dl_count': 0, 'tbl_count': 0, 'completed': False, 'error': None}
+            
+            def run_scraping():
+                try:
+                    dl_count, tbl_count = scrape_detail_pages_with_progress_queue(links_to_update, org_name, progress_queue_id)
+                    results['dl_count'] = dl_count
+                    results['tbl_count'] = tbl_count
+                    results['completed'] = True
+                except Exception as e:
+                    results['error'] = str(e)
+                    results['completed'] = True
+                    # Send error to queue
+                    progress_queue.put({'type': 'error', 'error': str(e)})
+            
+            # Start scraping in background thread
+            thread = threading.Thread(target=run_scraping)
+            thread.start()
+            
+            # Process real progress updates from the queue
+            while not results['completed']:
+                try:
+                    # Check for progress updates with timeout
+                    progress_update = progress_queue.get(timeout=1.0)
+                    
+                    if progress_update['type'] == 'progress':
+                        current_link = progress_update['current_link']
+                        progress_percent = round((current_link / total_links) * 100, 1)
+                        
+                        yield f"data: {json.dumps({'type': 'progress', 'orgName': org_name, 'currentLink': current_link, 'totalLinks': total_links, 'progress': progress_percent, 'message': f'正在处理第 {current_link}/{total_links} 个链接 ({progress_percent}%)'})}\n\n"
+                    
+                    elif progress_update['type'] == 'error':
+                        yield f"data: {json.dumps({'type': 'error', 'orgName': org_name, 'error': progress_update['error'], 'message': '更新过程中出现错误'})}\n\n"
+                        break
+                        
+                except:
+                    # Timeout - continue checking
+                    await asyncio.sleep(0.1)
+            
+            # Wait for completion
+            thread.join(timeout=60)  # 60 second timeout
+            
+            if results['error']:
+                yield f"data: {json.dumps({'type': 'error', 'orgName': org_name, 'error': results['error'], 'message': '更新过程中出现错误'})}\n\n"
+            else:
+                # Send completion event
+                yield f"data: {json.dumps({'type': 'complete', 'orgName': org_name, 'updatedCases': total_links, 'downloads': results['dl_count'], 'tables': results['tbl_count'], 'message': f'详情更新完成！处理了 {total_links} 条案例，获取了 {results["dl_count"]} 个下载链接，提取了 {results["tbl_count"]} 个内容'})}\n\n"
+            
+        except Exception as error:
+            logger.error(f"[update-details-selective-stream] ERROR org={org_name} error={error}")
+            yield f"data: {json.dumps({'type': 'error', 'orgName': org_name, 'error': str(error), 'message': '更新过程中出现错误'})}\n\n"
+        finally:
+            # Clean up progress queue
+            if progress_queue_id in progress_queues:
+                del progress_queues[progress_queue_id]
+    
+    return StreamingResponse(generate_progress(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+    })
 
 @router.post("/update-details")
 async def update_details(request: UpdateDetailsRequest):
