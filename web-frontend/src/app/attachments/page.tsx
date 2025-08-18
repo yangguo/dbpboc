@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MainLayout } from "@/components/layout/main-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -101,6 +101,9 @@ export default function AttachmentsPage() {
   const [forceOverwrite, setForceOverwrite] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [downloadStatus, setDownloadStatus] = useState<DownloadStatus | null>(null);
+  const progressIntervalRef = useRef<number | null>(null);
+  const progressTimeoutRef = useRef<number | null>(null);
+  const cleanupScheduledRef = useRef<boolean>(false);
 
   // API functions
   const fetchOrganizations = async (): Promise<string[]> => {
@@ -151,6 +154,7 @@ export default function AttachmentsPage() {
   const cleanupDownloadSession = async (sessionId: string) => {
     try {
       const encoded = encodeURIComponent(sessionId);
+      // Best-effort cleanup; ignore non-OK responses
       await fetch(`${config.backendUrl}/api/v1/attachments/download-session/${encoded}`, {
         method: 'DELETE',
       });
@@ -231,6 +235,16 @@ export default function AttachmentsPage() {
     setCurrentSessionId(null);
     setDownloadResult(null);
     setIsDownloading(false);
+    // Clear any running timers/intervals and flags
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+    if (progressTimeoutRef.current) {
+      clearTimeout(progressTimeoutRef.current);
+      progressTimeoutRef.current = null;
+    }
+    cleanupScheduledRef.current = false;
   };
 
   const handleDownloadAttachments = async () => {
@@ -244,7 +258,7 @@ export default function AttachmentsPage() {
       return;
     }
 
-    // Reset all download-related state
+    // Reset all download-related state and ensure no stale timers
     resetDownloadState();
     setIsDownloading(true);
     const attachmentIds = Array.from(selectedAttachments);
@@ -295,7 +309,12 @@ export default function AttachmentsPage() {
 
         // Start polling for progress
         let lastCompletedCount = 0;
-        const progressInterval = setInterval(async () => {
+        // Ensure previous interval is cleared before starting a new one
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
+        progressIntervalRef.current = window.setInterval(async () => {
           try {
             const progress = await getDownloadProgress(result.session_id);
             console.log('Backend progress:', progress); // Debug log
@@ -331,8 +350,14 @@ export default function AttachmentsPage() {
 
             // Check if download is complete (by counts or overall progress)
             const doneCount = (progress.completed || 0) + (progress.failed || 0) + (progress.skipped || 0)
-            if (progress.overall_progress >= 100 || doneCount >= progress.total_files) {
-              clearInterval(progressInterval);
+            const overall = typeof progress.overall_progress === 'string'
+              ? parseInt(progress.overall_progress.replace('%', ''), 10) || 0
+              : (progress.overall_progress || 0);
+            if (overall >= 100 || doneCount >= progress.total_files) {
+              if (progressIntervalRef.current) {
+                clearInterval(progressIntervalRef.current);
+                progressIntervalRef.current = null;
+              }
               setIsDownloading(false);
               setCurrentSessionId(null);
 
@@ -369,22 +394,31 @@ export default function AttachmentsPage() {
                 });
               }
 
-              // Cleanup session after a delay
-              setTimeout(() => {
-                cleanupDownloadSession(result.session_id);
-              }, 5000);
+              // Cleanup session after a delay (only once)
+              if (!cleanupScheduledRef.current) {
+                cleanupScheduledRef.current = true;
+                progressTimeoutRef.current = window.setTimeout(() => {
+                  cleanupDownloadSession(result.session_id);
+                }, 2000);
+              }
             }
           } catch (error) {
             console.error('Failed to get progress:', error);
-            clearInterval(progressInterval);
+            if (progressIntervalRef.current) {
+              clearInterval(progressIntervalRef.current);
+              progressIntervalRef.current = null;
+            }
             setIsDownloading(false);
             setCurrentSessionId(null);
           }
         }, 1000); // Poll every second
 
         // Set a timeout to stop polling after 5 minutes
-        setTimeout(() => {
-          clearInterval(progressInterval);
+        progressTimeoutRef.current = window.setTimeout(() => {
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+          }
           if (isDownloading) {
             setIsDownloading(false);
             setCurrentSessionId(null);
