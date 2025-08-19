@@ -3,7 +3,9 @@ import logging
 import asyncio
 import time
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, status, Query, BackgroundTasks
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import unquote, urlparse
+from fastapi import APIRouter, HTTPException, status, Query, BackgroundTasks, Depends
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import os
@@ -13,7 +15,6 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import tempfile
-from urllib.parse import unquote, urlparse
 import json
 
 router = APIRouter()
@@ -104,7 +105,7 @@ def get_csvdf(folder: str, beginwith: str) -> pd.DataFrame:
     dflist = []
     for filepath in files:
         try:
-            df = pd.read_csv(filepath, index_col=0)
+            df = pd.read_csv(filepath)
             dflist.append(df)
         except Exception as e:
             logger.error(f"Error reading {filepath}: {e}")
@@ -779,3 +780,276 @@ async def download_file(org_name: str, filename: str):
         filename=filename,
         media_type='application/octet-stream'
     )
+
+class AttachmentTextItem(BaseModel):
+    id: str
+    fileName: str
+    fileType: str
+    link: str
+    filePath: str
+    status: str = 'pending'
+    content: Optional[str] = None
+    errorMessage: Optional[str] = None
+
+class TextExtractionRequest(BaseModel):
+    attachment_ids: List[str]
+    extract_all: bool = False
+
+def extract_text_from_file(file_path: str, file_type: str) -> str:
+    """Extract text content from various file types"""
+    try:
+        if file_type == 'pdf':
+            # PDF text extraction
+            try:
+                import PyPDF2
+                with open(file_path, 'rb') as file:
+                    reader = PyPDF2.PdfReader(file)
+                    text = ""
+                    for page in reader.pages:
+                        text += page.extract_text() + "\n"
+                    return text.strip()
+            except ImportError:
+                logger.warning("PyPDF2 not available, using fallback for PDF")
+                return f"PDF文件: {os.path.basename(file_path)} (需要安装PyPDF2库进行文本提取)"
+        
+        elif file_type == 'word':
+            # Word document text extraction
+            try:
+                import docx
+                doc = docx.Document(file_path)
+                text = ""
+                for paragraph in doc.paragraphs:
+                    text += paragraph.text + "\n"
+                return text.strip()
+            except ImportError:
+                logger.warning("python-docx not available, using fallback for Word")
+                return f"Word文档: {os.path.basename(file_path)} (需要安装python-docx库进行文本提取)"
+        
+        elif file_type == 'excel':
+            # Excel text extraction
+            try:
+                import openpyxl
+                workbook = openpyxl.load_workbook(file_path)
+                text = ""
+                for sheet_name in workbook.sheetnames:
+                    sheet = workbook[sheet_name]
+                    text += f"工作表: {sheet_name}\n"
+                    for row in sheet.iter_rows(values_only=True):
+                        row_text = "\t".join([str(cell) if cell is not None else "" for cell in row])
+                        if row_text.strip():
+                            text += row_text + "\n"
+                    text += "\n"
+                return text.strip()
+            except ImportError:
+                logger.warning("openpyxl not available, using fallback for Excel")
+                return f"Excel文件: {os.path.basename(file_path)} (需要安装openpyxl库进行文本提取)"
+        
+        elif file_type == 'image':
+            # Image OCR text extraction
+            try:
+                import pytesseract
+                from PIL import Image
+                image = Image.open(file_path)
+                text = pytesseract.image_to_string(image, lang='chi_sim+eng')
+                return text.strip()
+            except ImportError:
+                logger.warning("pytesseract or PIL not available, using fallback for image")
+                return f"图片文件: {os.path.basename(file_path)} (需要安装pytesseract和PIL库进行OCR文本提取)"
+        
+        else:
+            # Try to read as plain text
+            try:
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    return file.read()
+            except UnicodeDecodeError:
+                try:
+                    with open(file_path, 'r', encoding='gbk') as file:
+                        return file.read()
+                except UnicodeDecodeError:
+                    return f"无法读取文件: {os.path.basename(file_path)} (编码格式不支持)"
+    
+    except Exception as e:
+        logger.error(f"Error extracting text from {file_path}: {e}")
+        return f"文本提取失败: {str(e)}"
+
+@router.get("/attachment-text-list/{org_name}")
+async def get_attachment_text_list(org_name: str) -> List[AttachmentTextItem]:
+    """Get list of attachments with text extraction capability for an organization"""
+    if org_name not in org2name:
+        raise HTTPException(status_code=400, detail="Invalid organization name")
+    
+    org_name_index = org2name[org_name]
+    
+    try:
+        # Look for download files in temp folder
+        beginwith = f"pboctodownload{org_name_index}"
+        
+        # First try the organization-specific subfolder
+        org_temp_path = os.path.join(TEMP_PATH, org_name_index)
+        df = get_csvdf(org_temp_path, beginwith)
+        
+        # If not found, try the main temp folder
+        if df.empty:
+            df = get_csvdf(TEMP_PATH, beginwith)
+        
+        if df.empty:
+            return []
+        
+        # Check downloads directory for existing files
+        downloads_dir = os.path.join(TEMP_PATH, org_name_index, "downloads")
+        if not os.path.exists(downloads_dir):
+            return []
+        
+        existing_files = set(os.listdir(downloads_dir))
+        
+        attachments = []
+        for idx, row in df.iterrows():
+            download_url = row.get('download', '')
+            file_name = os.path.basename(download_url) if download_url else f"file_{idx}"
+            # Decode URL-encoded filename
+            file_name = unquote(file_name)
+            
+            # Clean filename for comparison
+            import re
+            clean_filename = re.sub(r'[<>:"/\\|?*]', '_', file_name)
+            
+            # Check if file exists in downloads directory
+            file_path = None
+            for existing_file in existing_files:
+                if existing_file == clean_filename or existing_file.startswith(clean_filename.split('.')[0]):
+                    file_path = os.path.join(downloads_dir, existing_file)
+                    clean_filename = existing_file
+                    break
+            
+            if file_path and os.path.exists(file_path):
+                # Determine file type
+                file_ext = os.path.splitext(clean_filename)[1].lower()
+                if file_ext in ['.xlsx', '.xls', '.et', '.ett']:
+                    file_type = 'excel'
+                elif file_ext == '.pdf':
+                    file_type = 'pdf'
+                elif file_ext in ['.docx', '.doc', '.wps', '.docm']:
+                    file_type = 'word'
+                elif file_ext in ['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tif']:
+                    file_type = 'image'
+                else:
+                    file_type = 'other'
+                
+                attachment = AttachmentTextItem(
+                    id=str(idx),
+                    fileName=clean_filename,
+                    fileType=file_type,
+                    link=row.get('link', ''),
+                    filePath=file_path,
+                    status='ready'
+                )
+                attachments.append(attachment)
+        
+        return attachments
+    
+    except Exception as e:
+        logger.error(f"Error getting attachment text list for {org_name}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get attachment text list")
+
+@router.post("/extract-text/{org_name}")
+async def extract_attachment_text(org_name: str, request: TextExtractionRequest):
+    """Extract text from selected attachments"""
+    if org_name not in org2name:
+        raise HTTPException(status_code=400, detail="Invalid organization name")
+    
+    org_name_index = org2name[org_name]
+    
+    try:
+        # Get attachment list
+        attachments = await get_attachment_text_list(org_name)
+        
+        if not attachments:
+            raise HTTPException(status_code=404, detail="No attachments found")
+        
+        # Filter by selected IDs or extract all
+        if request.extract_all:
+            selected_attachments = attachments
+        else:
+            selected_attachments = [att for att in attachments if att.id in request.attachment_ids]
+        
+        if not selected_attachments:
+            raise HTTPException(status_code=400, detail="No valid attachments selected")
+        
+        # Extract text from each file
+        results = []
+        for attachment in selected_attachments:
+            try:
+                logger.info(f"Extracting text from {attachment.fileName}")
+                content = extract_text_from_file(attachment.filePath, attachment.fileType)
+                
+                result = {
+                    "id": attachment.id,
+                    "fileName": attachment.fileName,
+                    "fileType": attachment.fileType,
+                    "link": attachment.link,
+                    "filePath": attachment.filePath,
+                    "status": "completed",
+                    "content": content
+                }
+                results.append(result)
+                
+            except Exception as e:
+                logger.error(f"Error extracting text from {attachment.fileName}: {e}")
+                result = {
+                    "id": attachment.id,
+                    "fileName": attachment.fileName,
+                    "fileType": attachment.fileType,
+                    "link": attachment.link,
+                    "filePath": attachment.filePath,
+                    "status": "failed",
+                    "content": None,
+                    "errorMessage": str(e)
+                }
+                results.append(result)
+        
+        return {
+            "message": f"Text extraction completed for {len(results)} files",
+            "total_files": len(results),
+            "successful": len([r for r in results if r["status"] == "completed"]),
+            "failed": len([r for r in results if r["status"] == "failed"]),
+            "results": results
+        }
+    
+    except Exception as e:
+        logger.error(f"Error extracting text for {org_name}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to extract text")
+
+@router.post("/save-text-results/{org_name}")
+async def save_text_results(org_name: str, results: List[dict]):
+    """Save text extraction results as pboctotable file"""
+    if org_name not in org2name:
+        raise HTTPException(status_code=400, detail="Invalid organization name")
+    
+    org_name_index = org2name[org_name]
+    
+    try:
+        # Convert results to DataFrame
+        df = pd.DataFrame(results)
+        
+        # Save to temp folder
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        filename = f"pboctotable{org_name_index}{timestamp}"
+        
+        folder = os.path.join(TEMP_PATH, org_name_index)
+        os.makedirs(folder, exist_ok=True)
+        
+        filepath = os.path.join(folder, f"{filename}.csv")
+        df.to_csv(filepath, quoting=1, escapechar='\\')
+        
+        logger.info(f"Saved text extraction results to {filepath}")
+        
+        return {
+            "message": "Text extraction results saved successfully",
+            "filename": filename,
+            "filepath": filepath,
+            "total_records": len(results)
+        }
+    
+    except Exception as e:
+        logger.error(f"Error saving text results for {org_name}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save text results")

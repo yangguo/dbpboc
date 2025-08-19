@@ -22,6 +22,7 @@ import {
   Eye,
   Download
 } from "lucide-react";
+import { config } from "@/lib/config";
 
 // City list from the original code
 const cityList = [
@@ -37,8 +38,9 @@ interface FileItem {
   fileType: string;
   link: string;
   filePath: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  extractedData?: any[];
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'ready';
+  content?: string;
+  extractedData?: Record<string, any>[];
   errorMessage?: string;
 }
 
@@ -104,12 +106,18 @@ export default function AttachmentReadPage() {
   const loadFileList = async () => {
     setIsLoading(true);
     try {
-      // Simulate API call to get file list
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setFiles(mockFiles);
-      setSelectedFiles(mockFiles.map((_, index) => index));
+      const response = await fetch(`${config.backendUrl}/api/v1/attachments/attachment-text-list/${selectedOrg}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch attachment list');
+      }
+      const attachmentList = await response.json();
+      setFiles(attachmentList);
+      setSelectedFiles(attachmentList.map((_: FileItem, index: number) => index));
     } catch (error) {
       console.error("Failed to load files:", error);
+      // Fallback to mock data for development
+      setFiles(mockFiles);
+      setSelectedFiles(mockFiles.map((_, index) => index));
     } finally {
       setIsLoading(false);
     }
@@ -142,10 +150,18 @@ export default function AttachmentReadPage() {
       pending: { label: '待处理', className: 'bg-gray-100 text-gray-800' },
       processing: { label: '处理中', className: 'bg-blue-100 text-blue-800' },
       completed: { label: '已完成', className: 'bg-green-100 text-green-800' },
-      failed: { label: '失败', className: 'bg-red-100 text-red-800' }
+      failed: { label: '失败', className: 'bg-red-100 text-red-800' },
+      ready: { label: '就绪', className: 'bg-yellow-100 text-yellow-800' }
     };
     
     const config = statusConfig[status as keyof typeof statusConfig];
+    if (!config) {
+      return (
+        <Badge className="bg-gray-100 text-gray-800">
+          未知状态
+        </Badge>
+      );
+    }
     return (
       <Badge className={config.className}>
         {config.label}
@@ -169,105 +185,157 @@ export default function AttachmentReadPage() {
     }
   };
 
-  const processFiles = async (fileType: string) => {
+  const processFiles = async () => {
     if (!selectedOrg || selectedFiles.length === 0) return;
     
     setIsProcessing(true);
     const filesToProcess = batchMode 
-      ? files.slice(startIndex, endIndex).filter((_, index) => selectedFiles.includes(startIndex + index))
+      ? files.filter((_, index) => selectedFiles.includes(index))
       : [files[selectedFiles[0]]];
     
-    const results: any[] = [];
-    
-    for (const file of filesToProcess) {
-      // Update status to processing
+    try {
+      // Update status to processing for selected files
+      const fileIds = filesToProcess.map(f => f.id);
       setFiles(prev => prev.map(f => 
-        f.id === file.id 
+        fileIds.includes(f.id) 
           ? { ...f, status: 'processing' }
           : f
       ));
 
-      try {
-        // Simulate file processing based on type
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        let extractedData: any[] = [];
-        
-        switch (fileType) {
-          case 'excel':
-            if (file.fileType === 'excel') {
-              extractedData = [
-                { "序号": 1, "企业名称": "测试银行A", "处罚决定书文号": "测试文号001" },
-                { "序号": 2, "企业名称": "测试银行B", "处罚决定书文号": "测试文号002" }
-              ];
-            }
-            break;
-          case 'pdf':
-            if (file.fileType === 'pdf') {
-              extractedData = [
-                { "内容": "PDF提取的处罚决定书内容...", "页码": 1 }
-              ];
-            }
-            break;
-          case 'word':
-            if (file.fileType === 'word') {
-              extractedData = [
-                { "段落": "Word文档提取的处罚内容...", "序号": 1 }
-              ];
-            }
-            break;
-          case 'image':
-            if (file.fileType === 'image') {
-              extractedData = [
-                { "OCR文本": "图片识别的处罚决定书文字...", "置信度": "95%" }
-              ];
-            }
-            break;
-        }
+      // Call backend API to extract text
+      const response = await fetch(`${config.backendUrl}/api/v1/attachments/extract-text/${selectedOrg}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          attachment_ids: fileIds,
+          extract_all: false
+        })
+      });
 
-        // Mark as completed
-        setFiles(prev => prev.map(f => 
-          f.id === file.id 
-            ? { ...f, status: 'completed', extractedData }
-            : f
-        ));
-
-        if (extractedData.length > 0) {
-          results.push(...extractedData.map(item => ({ ...item, file: file.fileName, link: file.link })));
-        }
-
-      } catch (error) {
-        // Mark as failed
-        setFiles(prev => prev.map(f => 
-          f.id === file.id 
-            ? { ...f, status: 'failed', errorMessage: 'Processing failed' }
-            : f
-        ));
+      if (!response.ok) {
+        throw new Error('Failed to extract text from files');
       }
+
+      const result = await response.json();
+      const extractedFiles = result.results || [];
+      
+      // Update files with extraction results
+      setFiles(prev => prev.map(f => {
+        const extractedFile = extractedFiles.find((ef: FileItem & { content?: string }) => ef.id === f.id);
+        if (extractedFile) {
+          return {
+            ...f,
+            status: extractedFile.status,
+            content: extractedFile.content,
+            errorMessage: extractedFile.errorMessage,
+            extractedData: extractedFile.content ? [{
+              "文件名": extractedFile.fileName,
+              "文件类型": extractedFile.fileType,
+              "提取内容": extractedFile.content.substring(0, 100) + (extractedFile.content.length > 100 ? '...' : ''),
+              "完整内容长度": extractedFile.content.length
+            }] : undefined
+          };
+        }
+        return f;
+      }));
+
+      // Prepare results for display
+      const results = extractedFiles
+        .filter((ef: FileItem & { content?: string }) => ef.status === 'completed' && ef.content)
+        .map((ef: FileItem & { content?: string }) => ({
+           "文件名": ef.fileName,
+           "文件类型": ef.fileType,
+           "链接": ef.link,
+           "提取内容": ef.content ? ef.content.substring(0, 200) + (ef.content.length > 200 ? '...' : '') : '',
+           "完整内容长度": ef.content ? ef.content.length : 0,
+           "完整内容": ef.content || ''
+         }));
+      
+      setExtractedResults(results);
+
+    } catch (error) {
+      console.error('Error processing files:', error);
+      // Mark all processing files as failed
+      const fileIds = filesToProcess.map(f => f.id);
+      setFiles(prev => prev.map(f => 
+        fileIds.includes(f.id) 
+          ? { ...f, status: 'failed', errorMessage: 'Processing failed' }
+          : f
+      ));
+    } finally {
+      setIsProcessing(false);
     }
-    
-    setExtractedResults(results);
-    setIsProcessing(false);
   };
 
-  const handleSaveResults = () => {
-    if (extractedResults.length === 0) return;
-    
-    // Convert to CSV format
-    const headers = Object.keys(extractedResults[0]);
-    const csvContent = [
-      headers.join(','),
-      ...extractedResults.map(row => 
-        headers.map(header => `"${row[header] || ''}"`).join(',')
-      )
-    ].join('\n');
-    
-    // Create download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `extracted_data_${selectedOrg}_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
+  const handleSaveResults = async () => {
+    if (extractedResults.length === 0) {
+      alert('没有可保存的结果');
+      return;
+    }
+
+    try {
+      // Prepare data for saving - include content field
+      const dataToSave = files
+        .filter(f => f.status === 'completed' && f.content)
+        .map(f => ({
+          id: f.id,
+          fileName: f.fileName,
+          fileType: f.fileType,
+          link: f.link,
+          filePath: f.filePath,
+          content: f.content,
+          status: f.status
+        }));
+
+      // Call backend API to save as pboctotable
+      const response = await fetch(`${config.backendUrl}/api/v1/attachments/save-text-results/${selectedOrg}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(dataToSave)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save results');
+      }
+
+      const result = await response.json();
+      alert(`结果已成功保存为pboctotable文件: ${result.filename}`);
+
+      // Also provide local CSV download as backup
+      const headers = Object.keys(extractedResults[0]);
+      const csvContent = [
+        headers.join(','),
+        ...extractedResults.map(row => 
+          headers.map(header => {
+            const value = row[header];
+            // Escape quotes and wrap in quotes if contains comma
+            if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+              return `"${value.replace(/"/g, '""')}"`;
+            }
+            return value;
+          }).join(',')
+        )
+      ].join('\n');
+
+      // Create and download file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `extracted_results_${new Date().toISOString().slice(0, 10)}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+    } catch (error) {
+      console.error('Error saving results:', error);
+      alert('保存结果时出错，请重试');
+    }
   };
 
   return (
@@ -347,7 +415,7 @@ export default function AttachmentReadPage() {
                   <Checkbox 
                     id="batchMode" 
                     checked={batchMode}
-                    onCheckedChange={setBatchMode}
+                    onCheckedChange={(checked) => setBatchMode(checked === true)}
                   />
                   <label htmlFor="batchMode" className="text-sm font-medium">批量处理</label>
                 </div>
@@ -355,7 +423,7 @@ export default function AttachmentReadPage() {
                   <Checkbox 
                     id="pdfMode" 
                     checked={pdfMode}
-                    onCheckedChange={setPdfMode}
+                    onCheckedChange={(checked) => setPdfMode(checked === true)}
                   />
                   <label htmlFor="pdfMode" className="text-sm font-medium">PDF模式</label>
                 </div>
@@ -363,7 +431,7 @@ export default function AttachmentReadPage() {
                   <Checkbox 
                     id="halfMode" 
                     checked={halfMode}
-                    onCheckedChange={setHalfMode}
+                    onCheckedChange={(checked) => setHalfMode(checked === true)}
                   />
                   <label htmlFor="halfMode" className="text-sm font-medium">半页模式</label>
                 </div>
@@ -403,36 +471,12 @@ export default function AttachmentReadPage() {
 
               <div className="flex gap-2">
                 <Button 
-                  onClick={() => processFiles('excel')}
+                  onClick={() => processFiles()}
                   disabled={isProcessing || selectedFiles.length === 0}
-                  className="flex items-center gap-2"
-                >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  读取Excel文件
-                </Button>
-                <Button 
-                  onClick={() => processFiles('pdf')}
-                  disabled={isProcessing || selectedFiles.length === 0}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2 shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   <FileText className="h-4 w-4" />
-                  读取PDF文件
-                </Button>
-                <Button 
-                  onClick={() => processFiles('word')}
-                  disabled={isProcessing || selectedFiles.length === 0}
-                  className="flex items-center gap-2"
-                >
-                  <File className="h-4 w-4" />
-                  读取Word文件
-                </Button>
-                <Button 
-                  onClick={() => processFiles('image')}
-                  disabled={isProcessing || selectedFiles.length === 0}
-                  className="flex items-center gap-2"
-                >
-                  <Image className="h-4 w-4" />
-                  读取图片文件
+                  {isProcessing ? '处理中...' : '读取文件'}
                 </Button>
               </div>
               
@@ -471,23 +515,27 @@ export default function AttachmentReadPage() {
                           <Checkbox 
                             checked={selectedFiles.length === files.length}
                             onCheckedChange={handleSelectAll}
+                            className="w-5 h-5 border-2 border-blue-500 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                           />
                         </TableHead>
                         <TableHead>索引</TableHead>
                         <TableHead>文件名</TableHead>
                         <TableHead>类型</TableHead>
                         <TableHead>状态</TableHead>
-                        <TableHead>提取结果</TableHead>
+                        <TableHead>提取内容</TableHead>
                         <TableHead>操作</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {files.map((file, index) => (
-                        <TableRow key={file.id}>
+                        <TableRow 
+                          key={file.id}
+                        >
                           <TableCell>
                             <Checkbox 
                               checked={selectedFiles.includes(index)}
                               onCheckedChange={(checked) => handleFileSelection(index, checked as boolean)}
+                              className="w-5 h-5 border-2 border-blue-500 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                             />
                           </TableCell>
                           <TableCell>{index}</TableCell>
@@ -504,7 +552,31 @@ export default function AttachmentReadPage() {
                             {getStatusBadge(file.status)}
                           </TableCell>
                           <TableCell>
-                            {file.extractedData ? (
+                            {file.content ? (
+                              <div className="max-w-xs">
+                                <div 
+                                  className="text-xs bg-gray-50 p-2 rounded overflow-auto max-h-20 cursor-help relative group"
+                                  title={file.content}
+                                >
+                                  <div className="font-medium text-gray-700 mb-1">提取的文本内容:</div>
+                                  <div className="text-gray-600">
+                                    {file.content.length > 100 
+                                      ? `${file.content.substring(0, 100)}...` 
+                                      : file.content
+                                    }
+                                  </div>
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    总长度: {file.content.length} 字符
+                                  </div>
+                                  
+                                  {/* Custom tooltip */}
+                                  <div className="absolute left-0 top-full mt-2 p-3 bg-gray-900 text-white text-xs rounded-md shadow-lg max-w-md max-h-60 overflow-auto z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-pre-wrap">
+                                    <div className="font-medium mb-2">完整提取内容:</div>
+                                    {file.content}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : file.extractedData ? (
                               <span className="text-sm text-green-600">
                                 {file.extractedData.length} 条记录
                               </span>
