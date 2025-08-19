@@ -336,7 +336,7 @@ export default function AttachmentProcessPage() {
               <div className="flex gap-2">
                 <Button 
                   onClick={handleSaveData}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-lg hover:shadow-xl transition-all duration-200 font-semibold"
                 >
                   <Save className="h-4 w-4" />
                   保存数据
@@ -389,7 +389,7 @@ export default function AttachmentProcessPage() {
                                       if (e.key === 'Escape') handleCellCancel();
                                     }}
                                   />
-                                  <Button size="sm" onClick={handleCellSave}>
+                                  <Button size="sm" onClick={handleCellSave} className="bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-lg hover:shadow-xl transition-all duration-200">
                                     <CheckCircle className="h-3 w-3" />
                                   </Button>
                                 </div>

@@ -611,7 +611,10 @@ export default function AttachmentReadPage() {
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <span>提取结果</span>
-                <Button onClick={handleSaveResults} className="flex items-center gap-2">
+                <Button 
+                  onClick={handleSaveResults} 
+                  className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-lg hover:shadow-xl transition-all duration-200 font-semibold"
+                >
                   <Download className="h-4 w-4" />
                   保存结果
                 </Button>

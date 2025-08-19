@@ -813,36 +813,131 @@ def extract_text_from_file(file_path: str, file_type: str) -> str:
                 return f"PDF文件: {os.path.basename(file_path)} (需要安装PyPDF2库进行文本提取)"
         
         elif file_type == 'word':
-            # Word document text extraction
+            # Word document text extraction - convert all Word formats to PDF first
             try:
-                import docx
-                doc = docx.Document(file_path)
-                text = ""
-                for paragraph in doc.paragraphs:
-                    text += paragraph.text + "\n"
-                return text.strip()
+                import subprocess
+                
+                # Convert all Word document formats (.doc, .wps, .docx, .docm) to PDF using soffice
+                file_ext = os.path.splitext(file_path)[1].lower()
+                logger.info(f"Converting {file_ext} file to PDF: {file_path}")
+                
+                # Create a temporary directory for conversion
+                temp_dir = tempfile.mkdtemp()
+                try:
+                    # Run soffice conversion to PDF
+                    subprocess.run([
+                        "soffice",
+                        "--headless",
+                        "--convert-to",
+                        "pdf",
+                        file_path,
+                        "--outdir",
+                        temp_dir
+                    ], check=True, capture_output=True, text=True)
+                    
+                    # Find the converted PDF file
+                    base_name = os.path.splitext(os.path.basename(file_path))[0]
+                    converted_file = os.path.join(temp_dir, f"{base_name}.pdf")
+                    
+                    if os.path.exists(converted_file):
+                        # Extract text from the converted PDF file
+                        try:
+                            import PyPDF2
+                            with open(converted_file, 'rb') as pdf_file:
+                                reader = PyPDF2.PdfReader(pdf_file)
+                                text = ""
+                                for page in reader.pages:
+                                    text += page.extract_text() + "\n"
+                            
+                            # Clean up temporary file
+                            os.remove(converted_file)
+                            os.rmdir(temp_dir)
+                            
+                            return text.strip()
+                        except ImportError:
+                            logger.warning("PyPDF2 not available for PDF text extraction")
+                            return f"{file_ext.upper()}文件已转换为PDF，但需要安装PyPDF2库进行文本提取: {os.path.basename(file_path)}"
+                    else:
+                        logger.error(f"Conversion failed: converted file not found at {converted_file}")
+                        return f"{file_ext.upper()}文件转换失败: {os.path.basename(file_path)}"
+                
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"soffice conversion failed: {e}")
+                    return f"{file_ext.upper()}文件转换失败: {os.path.basename(file_path)} (soffice转换错误: {e.stderr})"
+                except Exception as e:
+                    logger.error(f"{file_ext.upper()} conversion error: {e}")
+                    return f"{file_ext.upper()}文件转换失败: {os.path.basename(file_path)} (错误: {str(e)})"
+                finally:
+                    # Clean up temp directory if it still exists
+                    if os.path.exists(temp_dir):
+                        import shutil
+                        shutil.rmtree(temp_dir, ignore_errors=True)
+                    
             except ImportError:
-                logger.warning("python-docx not available, using fallback for Word")
-                return f"Word文档: {os.path.basename(file_path)} (需要安装python-docx库进行文本提取)"
+                logger.warning("subprocess not available, using fallback for Word")
+                return f"Word文档: {os.path.basename(file_path)} (需要安装相关依赖进行文本提取)"
         
         elif file_type == 'excel':
-            # Excel text extraction
+            # Excel text extraction - convert to PDF first
             try:
-                import openpyxl
-                workbook = openpyxl.load_workbook(file_path)
-                text = ""
-                for sheet_name in workbook.sheetnames:
-                    sheet = workbook[sheet_name]
-                    text += f"工作表: {sheet_name}\n"
-                    for row in sheet.iter_rows(values_only=True):
-                        row_text = "\t".join([str(cell) if cell is not None else "" for cell in row])
-                        if row_text.strip():
-                            text += row_text + "\n"
-                    text += "\n"
-                return text.strip()
+                import subprocess
+                
+                # Convert Excel files (.xls, .xlsx) to PDF using soffice
+                file_ext = os.path.splitext(file_path)[1].lower()
+                logger.info(f"Converting {file_ext} file to PDF: {file_path}")
+                
+                # Create a temporary directory for conversion
+                temp_dir = tempfile.mkdtemp()
+                try:
+                    # Run soffice conversion to PDF
+                    subprocess.run([
+                        "soffice",
+                        "--headless",
+                        "--convert-to",
+                        "pdf",
+                        file_path,
+                        "--outdir",
+                        temp_dir
+                    ], check=True, capture_output=True, text=True)
+                    
+                    # Find the converted PDF file
+                    base_name = os.path.splitext(os.path.basename(file_path))[0]
+                    converted_file = os.path.join(temp_dir, f"{base_name}.pdf")
+                    
+                    if os.path.exists(converted_file):
+                        logger.info(f"Successfully converted to PDF: {converted_file}")
+                        
+                        # Extract text from the converted PDF
+                        try:
+                            import PyPDF2
+                            with open(converted_file, 'rb') as pdf_file:
+                                reader = PyPDF2.PdfReader(pdf_file)
+                                text = ""
+                                for page in reader.pages:
+                                    text += page.extract_text() + "\n"
+                                return text.strip()
+                        except ImportError:
+                            logger.warning("PyPDF2 not available for Excel PDF conversion")
+                            return f"{file_ext.upper()}文件已转换为PDF，但需要安装PyPDF2库进行文本提取: {os.path.basename(file_path)}"
+                    else:
+                        logger.error(f"Conversion failed: converted file not found at {converted_file}")
+                        return f"{file_ext.upper()}文件转换失败: {os.path.basename(file_path)}"
+                
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"soffice conversion failed: {e}")
+                    return f"{file_ext.upper()}文件转换失败: {os.path.basename(file_path)} (soffice转换错误: {e.stderr})"
+                except Exception as e:
+                    logger.error(f"{file_ext.upper()} conversion error: {e}")
+                    return f"{file_ext.upper()}文件转换失败: {os.path.basename(file_path)} (错误: {str(e)})"
+                finally:
+                    # Clean up temp directory if it still exists
+                    if os.path.exists(temp_dir):
+                        import shutil
+                        shutil.rmtree(temp_dir, ignore_errors=True)
+                    
             except ImportError:
-                logger.warning("openpyxl not available, using fallback for Excel")
-                return f"Excel文件: {os.path.basename(file_path)} (需要安装openpyxl库进行文本提取)"
+                logger.warning("subprocess not available, using fallback for Excel")
+                return f"Excel文件: {os.path.basename(file_path)} (需要安装相关依赖进行文本提取)"
         
         elif file_type == 'image':
             # Image OCR text extraction

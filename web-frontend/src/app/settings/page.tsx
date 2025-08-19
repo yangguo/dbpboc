@@ -162,7 +162,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="flex justify-end">
-                  <Button onClick={handleNotificationsSave} className="flex items-center gap-2">
+                  <Button onClick={handleNotificationsSave} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-lg hover:shadow-xl transition-all duration-200 font-semibold">
                     <Save className="h-4 w-4" />
                     保存设置
                   </Button>
@@ -215,7 +215,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="flex justify-end">
-                  <Button onClick={handleSecuritySave} className="flex items-center gap-2">
+                  <Button onClick={handleSecuritySave} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-lg hover:shadow-xl transition-all duration-200 font-semibold">
                     <Save className="h-4 w-4" />
                     保存设置
                   </Button>
@@ -321,7 +321,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="flex justify-end">
-                  <Button onClick={handleSystemSave} className="flex items-center gap-2">
+                  <Button onClick={handleSystemSave} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-lg hover:shadow-xl transition-all duration-200 font-semibold">
                     <Save className="h-4 w-4" />
                     保存设置
                   </Button>
@@ -409,7 +409,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="flex justify-end">
-                  <Button onClick={handleDatabaseSave} className="flex items-center gap-2">
+                  <Button onClick={handleDatabaseSave} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-lg hover:shadow-xl transition-all duration-200 font-semibold">
                     <Save className="h-4 w-4" />
                     保存设置
                   </Button>
