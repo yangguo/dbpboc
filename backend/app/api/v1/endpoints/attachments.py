@@ -16,6 +16,11 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import tempfile
 import json
+import base64
+import subprocess
+import shutil
+from pathlib import Path
+from app.core.config import settings
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -795,6 +800,175 @@ class TextExtractionRequest(BaseModel):
     attachment_ids: List[str]
     extract_all: bool = False
 
+
+def encode_image(image_path: str) -> str:
+    """Encode image to base64 string"""
+    try:
+        with open(image_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode('utf-8')
+    except Exception as e:
+        logger.error(f"Failed to encode image {image_path}: {e}")
+        return ""
+
+
+def llm_ocr_text(image_file: str) -> str:
+    """Extract text from image using OpenAI Vision API"""
+    try:
+        if not os.path.exists(image_file):
+            logger.error(f"Image file not found: {image_file}")
+            return ""
+        
+        # Check if OpenAI API key is configured
+        if not settings.OPENAI_API_KEY:
+            logger.warning("OpenAI API key not configured, skipping LLM OCR")
+            return ""
+        
+        # Get the base64 string
+        base64_image = encode_image(image_file)
+        if not base64_image:
+            logger.error(f"Failed to encode image: {image_file}")
+            return ""
+        
+        logger.info(f"Attempting LLM OCR for: {os.path.basename(image_file)}")
+        
+        # Use OpenAI client
+        try:
+            from openai import OpenAI
+            client = OpenAI(
+                api_key=settings.OPENAI_API_KEY,
+                base_url=settings.OPENAI_BASE_URL
+            )
+            
+            response = client.chat.completions.create(
+                model=settings.OPENAI_VISION_MODEL,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "请提取图片中的所有文字内容，包括中文和英文。只返回提取的文字，不要添加任何解释。"
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=2000,
+                temperature=0
+            )
+            
+            if response and response.choices and len(response.choices) > 0:
+                content = response.choices[0].message.content
+                if content and content.strip():
+                    logger.info(f"✓ LLM OCR successful, extracted {len(content)} characters")
+                    return content.strip()
+            
+            logger.warning("❌ Empty response from vision model")
+            return ""
+            
+        except Exception as api_error:
+            error_msg = str(api_error)
+            logger.error(f"❌ Vision API error: {error_msg}")
+            
+            # Log specific error details for debugging
+            if "400" in error_msg:
+                logger.info("💡 HTTP 400 - Check model name and message format")
+            elif "401" in error_msg:
+                logger.info("💡 HTTP 401 - Check API key")
+            elif "404" in error_msg:
+                logger.info("💡 HTTP 404 - Model not found")
+            
+            return ""
+        
+    except Exception as e:
+        logger.error(f"❌ LLM OCR processing error: {str(e)}")
+        return ""
+
+
+def pdfurl2ocr(pdf_path: str, upload_path: str) -> str:
+    """Convert PDF to images and extract text using LLM OCR"""
+    image_file_list = []
+    text = ""
+    
+    try:
+        # Try PyMuPDF first (no external dependencies)
+        try:
+            import fitz
+            logger.info(f"Using PyMuPDF for PDF to image conversion")
+            
+            doc = fitz.open(pdf_path)
+            page_count = len(doc)
+            logger.info(f"PDF has {page_count} pages")
+            
+            # Convert each page to image
+            for page_num in range(page_count):
+                page = doc.load_page(page_num)
+                # Get pixmap with higher resolution for better OCR
+                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x zoom for better quality
+                filename = os.path.join(upload_path, f"page_{page_num + 1}.png")
+                pix.save(filename)
+                image_file_list.append(filename)
+                logger.info(f"Converted page {page_num + 1} to {filename}")
+            
+            doc.close()
+            
+        except ImportError:
+            logger.info("PyMuPDF not available, trying pdf2image...")
+            # Fallback to pdf2image (requires poppler)
+            try:
+                from pdf2image import convert_from_path
+                PDF_file = Path(pdf_path)
+                pdf_pages = convert_from_path(PDF_file, 300)  # 300 DPI for good quality
+                
+                for page_enumeration, page in enumerate(pdf_pages, start=1):
+                    filename = os.path.join(upload_path, f"page_{page_enumeration}.jpg")
+                    page.save(filename, "JPEG")
+                    image_file_list.append(filename)
+                    logger.info(f"Converted page {page_enumeration} to {filename}")
+                    
+            except Exception as pdf2image_error:
+                logger.error(f"pdf2image failed: {str(pdf2image_error)}")
+                return ""
+
+        # Extract text from images using LLM OCR
+        logger.info(f"Starting LLM OCR for {len(image_file_list)} images...")
+        for i, image_file in enumerate(image_file_list, 1):
+            try:
+                logger.info(f"Processing image {i}/{len(image_file_list)}: {os.path.basename(image_file)}")
+                extracted_text = llm_ocr_text(image_file)
+                if extracted_text and extracted_text.strip():
+                    text += extracted_text + "\n"
+                    logger.info(f"✓ Extracted {len(extracted_text)} characters from page {i}")
+                else:
+                    logger.warning(f"❌ No text extracted from page {i}")
+            except Exception as e:
+                logger.error(f"Error extracting text from {image_file}: {str(e)}")
+            finally:
+                # Clean up image file
+                try:
+                    os.remove(image_file)
+                except OSError:
+                    pass
+
+        if text.strip():
+            logger.info(f"✅ Total LLM OCR extraction: {len(text)} characters")
+        else:
+            logger.warning("❌ No text extracted from any pages")
+
+    except Exception as e:
+        logger.error(f"Error in PDF LLM OCR processing for {pdf_path}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        text = ""
+    
+    return text.strip()
+
+
 def extract_text_from_file(file_path: str, file_type: str) -> str:
     """Extract text content from various file types"""
     try:
@@ -807,10 +981,42 @@ def extract_text_from_file(file_path: str, file_type: str) -> str:
                     text = ""
                     for page in reader.pages:
                         text += page.extract_text() + "\n"
+                    
+                    # If normal PDF extraction failed or returned empty text, try LLM OCR
+                    if not text.strip():
+                        logger.info("Normal PDF extraction failed, trying LLM OCR...")
+                        # Create temporary directory for image conversion
+                        temp_dir = tempfile.mkdtemp()
+                        try:
+                            text = pdfurl2ocr(file_path, temp_dir)
+                        finally:
+                             # Clean up temporary directory
+                             try:
+                                 shutil.rmtree(temp_dir)
+                             except OSError:
+                                 pass
+                    
                     return text.strip()
             except ImportError:
                 logger.warning("PyPDF2 not available, using fallback for PDF")
                 return f"PDF文件: {os.path.basename(file_path)} (需要安装PyPDF2库进行文本提取)"
+            except Exception as e:
+                logger.error(f"Error extracting text from PDF: {e}")
+                # Try LLM OCR as fallback for any PDF processing errors
+                logger.info("PDF processing failed, trying LLM OCR as fallback...")
+                temp_dir = tempfile.mkdtemp()
+                try:
+                    text = pdfurl2ocr(file_path, temp_dir)
+                    return text.strip()
+                except Exception as ocr_error:
+                    logger.error(f"LLM OCR fallback also failed: {ocr_error}")
+                    return ""
+                finally:
+                     # Clean up temporary directory
+                     try:
+                         shutil.rmtree(temp_dir)
+                     except OSError:
+                         pass
         
         elif file_type == 'word':
             # Word document text extraction - convert all Word formats to PDF first
@@ -870,7 +1076,6 @@ def extract_text_from_file(file_path: str, file_type: str) -> str:
                 finally:
                     # Clean up temp directory if it still exists
                     if os.path.exists(temp_dir):
-                        import shutil
                         shutil.rmtree(temp_dir, ignore_errors=True)
                     
             except ImportError:
@@ -932,7 +1137,6 @@ def extract_text_from_file(file_path: str, file_type: str) -> str:
                 finally:
                     # Clean up temp directory if it still exists
                     if os.path.exists(temp_dir):
-                        import shutil
                         shutil.rmtree(temp_dir, ignore_errors=True)
                     
             except ImportError:

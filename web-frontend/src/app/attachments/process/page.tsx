@@ -164,10 +164,10 @@ export default function AttachmentProcessPage() {
     try {
       // Simulate API call to save data
       await new Promise(resolve => setTimeout(resolve, 1000));
-      alert("数据保存成功！");
+      console.log("数据保存成功！");
     } catch (error) {
       console.error("Failed to save data:", error);
-      alert("数据保存失败！");
+      console.error("数据保存失败！");
     }
   };
 

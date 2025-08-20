@@ -271,7 +271,7 @@ export default function AttachmentReadPage() {
 
   const handleSaveResults = async () => {
     if (extractedResults.length === 0) {
-      alert('没有可保存的结果');
+      console.log('没有可保存的结果');
       return;
     }
 
@@ -303,38 +303,11 @@ export default function AttachmentReadPage() {
       }
 
       const result = await response.json();
-      alert(`结果已成功保存为pboctotable文件: ${result.filename}`);
-
-      // Also provide local CSV download as backup
-      const headers = Object.keys(extractedResults[0]);
-      const csvContent = [
-        headers.join(','),
-        ...extractedResults.map(row => 
-          headers.map(header => {
-            const value = row[header];
-            // Escape quotes and wrap in quotes if contains comma
-            if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
-              return `"${value.replace(/"/g, '""')}"`;
-            }
-            return value;
-          }).join(',')
-        )
-      ].join('\n');
-
-      // Create and download file
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `extracted_results_${new Date().toISOString().slice(0, 10)}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      console.log(`结果已成功保存为pboctotable文件: ${result.filename}`);
 
     } catch (error) {
       console.error('Error saving results:', error);
-      alert('保存结果时出错，请重试');
+      console.error('保存结果时出错，请重试');
     }
   };
 
