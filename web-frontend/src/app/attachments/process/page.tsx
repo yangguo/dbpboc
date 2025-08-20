@@ -6,21 +6,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { config } from "@/lib/config";
 import { 
   RefreshCw, 
   AlertCircle, 
-  CheckCircle,
-  Settings,
-  Save,
-  Trash2,
-  Merge,
-  Edit
+  Settings
 } from "lucide-react";
 
-// City list from the original code
+// City list for organization selection
 const cityList = [
   "天津", "重庆", "上海", "兰州", "拉萨", "西宁", "乌鲁木齐", "南宁", "贵阳", 
   "福州", "成都", "呼和浩特", "郑州", "北京", "合肥", "厦门", "海口", "大连", 
@@ -43,19 +37,13 @@ const defaultColumns = [
   "作出行政处罚决定日期",
   "备注",
   "link",
-  "file"
+  "content"
 ];
 
 export default function AttachmentProcessPage() {
   const [selectedOrg, setSelectedOrg] = useState<string>("");
   const [processedData, setProcessedData] = useState<ProcessedData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [editingCell, setEditingCell] = useState<{row: number, col: string} | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const [selectedColumn, setSelectedColumn] = useState("");
-  const [selectedValues, setSelectedValues] = useState<string[]>([]);
-  const [mergeColumn, setMergeColumn] = useState("");
-  const [saveColumns, setSaveColumns] = useState(defaultColumns.join(", "));
 
   // Mock data for demonstration
   const mockProcessedData: ProcessedData[] = [
@@ -70,7 +58,7 @@ export default function AttachmentProcessPage() {
       "作出行政处罚决定日期": "2024-01-15",
       "备注": "",
       "link": "http://beijing.pbc.gov.cn/case/001",
-      "file": "penalty_001.pdf"
+      "content": "某银行股份有限公司因违规放贷被处罚款50万元，处罚决定书文号为京银罚字[2024]001号。"
     },
     {
       id: "2",
@@ -83,7 +71,7 @@ export default function AttachmentProcessPage() {
       "作出行政处罚决定日期": "2024-01-20",
       "备注": "",
       "link": "http://beijing.pbc.gov.cn/case/002", 
-      "file": "penalty_002.xlsx"
+      "content": "某金融服务公司因反洗钱违规被处罚款30万元，处罚决定书文号为京银罚字[2024]002号。"
     }
   ];
 
@@ -96,86 +84,27 @@ export default function AttachmentProcessPage() {
   const loadProcessedData = async () => {
     setIsLoading(true);
     try {
-      // Simulate API call to get processed data
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setProcessedData(mockProcessedData);
+      const response = await fetch(`${config.backendUrl}/api/v1/attachments/processed-data/${encodeURIComponent(selectedOrg)}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch processed data');
+      }
+      const data = await response.json();
+      // Transform the API response: extract data from each ProcessedDataItem
+      const transformedData = data.map((item: any) => ({
+        id: item.id,
+        ...item.data
+      }));
+      setProcessedData(transformedData);
     } catch (error) {
       console.error("Failed to load processed data:", error);
+      // Fallback to mock data for development
+      setProcessedData(mockProcessedData);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleCellEdit = (rowIndex: number, columnKey: string, value: string) => {
-    setEditingCell({ row: rowIndex, col: columnKey });
-    setEditValue(value);
-  };
-
-  const handleCellSave = () => {
-    if (editingCell) {
-      setProcessedData(prev => prev.map((row, index) => 
-        index === editingCell.row 
-          ? { ...row, [editingCell.col]: editValue }
-          : row
-      ));
-      setEditingCell(null);
-      setEditValue("");
-    }
-  };
-
-  const handleCellCancel = () => {
-    setEditingCell(null);
-    setEditValue("");
-  };
-
-  const handleDeleteRows = () => {
-    if (!selectedColumn || selectedValues.length === 0) return;
-    
-    const filteredData = processedData.filter(row => 
-      !selectedValues.includes(row[selectedColumn])
-    );
-    setProcessedData(filteredData);
-    setSelectedValues([]);
-  };
-
-  const handleMergeRows = () => {
-    if (!mergeColumn) return;
-    
-    // Group by merge column and link, then merge other columns
-    const grouped = processedData.reduce((acc, row) => {
-      const key = `${row[mergeColumn]}_${row.link}`;
-      if (!acc[key]) {
-        acc[key] = { ...row };
-      } else {
-        // Merge other columns by concatenating
-        Object.keys(row).forEach(col => {
-          if (col !== mergeColumn && col !== 'link' && col !== 'id') {
-            acc[key][col] = `${acc[key][col]} ${row[col]}`.trim();
-          }
-        });
-      }
-      return acc;
-    }, {} as Record<string, ProcessedData>);
-    
-    setProcessedData(Object.values(grouped));
-  };
-
-  const handleSaveData = async () => {
-    try {
-      // Simulate API call to save data
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      console.log("数据保存成功！");
-    } catch (error) {
-      console.error("Failed to save data:", error);
-      console.error("数据保存失败！");
-    }
-  };
-
-  const getColumnValues = (columnKey: string) => {
-    return [...new Set(processedData.map(row => row[columnKey]).filter(Boolean))];
-  };
-
-  const columns = processedData.length > 0 ? Object.keys(processedData[0]).filter(key => key !== 'id') : [];
+  const columns = processedData.length > 0 ? Object.keys(processedData[0]).filter(key => key !== 'id' && (key === 'link' || key === 'content')) : [];
 
   return (
     <MainLayout>
@@ -183,7 +112,9 @@ export default function AttachmentProcessPage() {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">内容处理</h1>
-            <p className="text-muted-foreground">处理和编辑提取的表格数据</p>
+            <p className="text-muted-foreground">
+              查看处理后的数据表格
+            </p>
           </div>
           <Button 
             onClick={() => window.location.reload()} 
@@ -203,7 +134,7 @@ export default function AttachmentProcessPage() {
               机构选择
             </CardTitle>
             <CardDescription>
-              选择要处理数据的PBOC机构
+              选择要查看数据的PBOC机构
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -239,138 +170,45 @@ export default function AttachmentProcessPage() {
           </CardContent>
         </Card>
 
-        {/* Data Processing Controls */}
-        {selectedOrg && processedData.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>数据处理工具</CardTitle>
-              <CardDescription>
-                编辑、删除和合并表格数据
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Delete Controls */}
-              <div className="flex gap-4 items-end">
-                <div className="flex-1">
-                  <label className="text-sm font-medium">选择删除列</label>
-                  <Select value={selectedColumn} onValueChange={setSelectedColumn}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择列" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {columns.map((col) => (
-                        <SelectItem key={col} value={col}>
-                          {col}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex-1">
-                  <label className="text-sm font-medium">选择删除列值</label>
-                  <Select 
-                    value={selectedValues.join(",")} 
-                    onValueChange={(value) => setSelectedValues(value ? value.split(",") : [])}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择值" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {selectedColumn && getColumnValues(selectedColumn).map((value) => (
-                        <SelectItem key={value} value={value}>
-                          {value}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button 
-                  onClick={handleDeleteRows}
-                  disabled={!selectedColumn || selectedValues.length === 0}
-                  variant="destructive"
-                  className="flex items-center gap-2"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  删除
-                </Button>
-              </div>
-
-              {/* Merge Controls */}
-              <div className="flex gap-4 items-end">
-                <div className="flex-1">
-                  <label className="text-sm font-medium">选择合并列</label>
-                  <Select value={mergeColumn} onValueChange={setMergeColumn}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择合并列" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {columns.map((col) => (
-                        <SelectItem key={col} value={col}>
-                          {col}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button 
-                  onClick={handleMergeRows}
-                  disabled={!mergeColumn}
-                  className="flex items-center gap-2"
-                >
-                  <Merge className="h-4 w-4" />
-                  合并
-                </Button>
-              </div>
-
-              {/* Save Columns Configuration */}
-              <div>
-                <label className="text-sm font-medium">保存列配置</label>
-                <Textarea
-                  value={saveColumns}
-                  onChange={(e) => setSaveColumns(e.target.value)}
-                  placeholder="输入要保存的列名，用逗号分隔"
-                  className="mt-1"
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <Button 
-                  onClick={handleSaveData}
-                  className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-lg hover:shadow-xl transition-all duration-200 font-semibold"
-                >
-                  <Save className="h-4 w-4" />
-                  保存数据
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Data Table */}
+        {/* Data Display */}
         {selectedOrg && (
           <Card>
             <CardHeader>
-              <CardTitle>待更新表格</CardTitle>
+              <CardTitle>数据表格</CardTitle>
               <CardDescription>
-                {selectedOrg} - 共 {processedData.length} 条记录
+                {processedData.length > 0 ? `共 ${processedData.length} 条记录` : '暂无数据'}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {processedData.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {isLoading ? "加载中..." : "暂无数据"}
+              {isLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin mr-2" />
+                  <span>加载中...</span>
                 </div>
+              ) : processedData.length === 0 ? (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    未找到处理后的数据。请确保已选择正确的机构。
+                  </AlertDescription>
+                </Alert>
               ) : (
-                <div className="rounded-md border max-h-96 overflow-auto">
+                <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         {columns.map((col) => (
-                          <TableHead key={col} className="min-w-32">
+                          <TableHead 
+                            key={col} 
+                            className={`
+                              ${col === 'link' ? 'min-w-48' : ''}
+                              ${col === 'content' ? 'min-w-64' : ''}
+                              ${col !== 'link' && col !== 'content' ? 'min-w-32' : ''}
+                            `}
+                          >
                             {col}
                           </TableHead>
                         ))}
-                        <TableHead>操作</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -378,42 +216,28 @@ export default function AttachmentProcessPage() {
                         <TableRow key={row.id}>
                           {columns.map((col) => (
                             <TableCell key={col}>
-                              {editingCell?.row === rowIndex && editingCell?.col === col ? (
-                                <div className="flex gap-1">
-                                  <Input
-                                    value={editValue}
-                                    onChange={(e) => setEditValue(e.target.value)}
-                                    className="h-8"
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') handleCellSave();
-                                      if (e.key === 'Escape') handleCellCancel();
-                                    }}
-                                  />
-                                  <Button size="sm" onClick={handleCellSave} className="bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-lg hover:shadow-xl transition-all duration-200">
-                                    <CheckCircle className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              ) : (
-                                <div 
-                                  className="cursor-pointer hover:bg-gray-100 p-1 rounded min-h-8 flex items-center"
-                                  onClick={() => handleCellEdit(rowIndex, col, row[col])}
-                                >
-                                  <span className="truncate max-w-xs">
-                                    {row[col]}
+                              <div className="cursor-default hover:bg-gray-50 p-1 rounded min-h-8 flex items-center">
+                                {col === 'link' ? (
+                                  <a 
+                                    href={String(row[col] || '')} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 underline truncate max-w-xs"
+                                  >
+                                    {String(row[col] || '')}
+                                  </a>
+                                ) : col === 'content' ? (
+                                  <span className="truncate max-w-md" title={String(row[col] || '')}>
+                                    {String(row[col] || '')}
                                   </span>
-                                </div>
-                              )}
+                                ) : (
+                                  <span className="truncate max-w-xs">
+                                    {String(row[col] || '')}
+                                  </span>
+                                )}
+                              </div>
                             </TableCell>
                           ))}
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleCellEdit(rowIndex, columns[0], row[columns[0]])}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -422,16 +246,6 @@ export default function AttachmentProcessPage() {
               )}
             </CardContent>
           </Card>
-        )}
-
-        {/* Processing Status */}
-        {processedData.length > 0 && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              数据处理完成。点击单元格可以编辑内容，使用上方工具进行批量操作。
-            </AlertDescription>
-          </Alert>
         )}
       </div>
     </MainLayout>
