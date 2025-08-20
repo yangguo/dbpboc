@@ -256,7 +256,7 @@ async def get_file_list(org_name: str) -> List[FileItem]:
                 fileName=file_name,
                 fileType=file_type,
                 link=row.get('link', ''),
-                filePath=os.path.join(TEMP_PATH, org_name_index, file_name),
+                filePath=os.path.join(TEMP_PATH, org_name_index, "downloads", file_name),
                 status='pending'
             )
             files.append(file_item)
@@ -799,6 +799,8 @@ class AttachmentTextItem(BaseModel):
 class TextExtractionRequest(BaseModel):
     attachment_ids: List[str]
     extract_all: bool = False
+    use_soffice: bool = False
+    use_llm_ocr: bool = False
 
 
 def encode_image(image_path: str) -> str:
@@ -969,9 +971,155 @@ def pdfurl2ocr(pdf_path: str, upload_path: str) -> str:
     return text.strip()
 
 
-def extract_text_from_file(file_path: str, file_type: str) -> str:
+def extract_text_from_file(file_path: str, file_type: str, use_soffice: bool = False, use_llm_ocr: bool = False) -> str:
     """Extract text content from various file types"""
     try:
+        # If use_llm_ocr is enabled, force all files to PDF->Image->LLM OCR pipeline
+        if use_llm_ocr:
+            logger.info(f"Using LLM OCR mode for {file_type} file: {os.path.basename(file_path)}")
+            logger.info(f"File type check: file_type='{file_type}', file_path.lower().endswith('.docx')={file_path.lower().endswith('.docx')}")
+            try:
+                # Step 1: Convert any file to PDF first (if not already PDF)
+                pdf_file_path = file_path
+                temp_dir = None
+                
+                if file_type != 'pdf':
+                    # Create temporary directory for conversion
+                    temp_dir = tempfile.mkdtemp()
+                    
+                    try:
+                        # Convert file to PDF using soffice
+                        logger.info(f"Converting {file_path} to PDF in {temp_dir}")
+                        result = subprocess.run([
+                            "soffice",
+                            "--headless",
+                            "--convert-to",
+                            "pdf",
+                            file_path,
+                            "--outdir",
+                            temp_dir
+                        ], capture_output=True, text=True)
+                        
+                        logger.info(f"soffice stdout: {result.stdout}")
+                        logger.info(f"soffice stderr: {result.stderr}")
+                        logger.info(f"soffice return code: {result.returncode}")
+                        
+                        # Check if soffice conversion was successful
+                        if result.returncode != 0:
+                            logger.error(f"soffice conversion failed with return code {result.returncode}")
+                            logger.error(f"soffice stderr: {result.stderr}")
+                            # For docx files, try direct text extraction as fallback
+                            if file_type == 'word' and file_path.lower().endswith('.docx'):
+                                logger.info("Trying direct docx text extraction as fallback")
+                                try:
+                                    from docx import Document
+                                    doc = Document(file_path)
+                                    text = ""
+                                    for paragraph in doc.paragraphs:
+                                        text += paragraph.text + "\n"
+                                    return text.strip() if text.strip() else "DOCX文件内容为空"
+                                except Exception as docx_error:
+                                    logger.error(f"Direct docx extraction also failed: {docx_error}")
+                                    return f"DOCX文件处理失败: soffice转换失败且直接读取也失败 {os.path.basename(file_path)}"
+                            return f"{file_type.upper()}文件转PDF失败: soffice无法加载文件 {os.path.basename(file_path)}"
+                        
+                        # Find the converted PDF file
+                        base_name = os.path.splitext(os.path.basename(file_path))[0]
+                        pdf_file_path = os.path.join(temp_dir, f"{base_name}.pdf")
+                        
+                        # List all files in temp directory for debugging
+                        temp_files = os.listdir(temp_dir)
+                        logger.info(f"Files in temp directory: {temp_files}")
+                        
+                        if not os.path.exists(pdf_file_path):
+                            logger.error(f"Conversion failed: converted file not found at {pdf_file_path}")
+                            # For docx files, try direct text extraction as fallback
+                            if file_type == 'word' and file_path.lower().endswith('.docx'):
+                                logger.info("PDF not found, trying direct docx text extraction as fallback")
+                                try:
+                                    from docx import Document
+                                    # Convert relative path to absolute path
+                                    abs_file_path = os.path.abspath(file_path)
+                                    doc = Document(abs_file_path)
+                                    text = ""
+                                    for paragraph in doc.paragraphs:
+                                        text += paragraph.text + "\n"
+                                    return text.strip() if text.strip() else "DOCX文件内容为空"
+                                except Exception as docx_error:
+                                    logger.error(f"Direct docx extraction also failed: {docx_error}")
+                                    if "Package not found" in str(docx_error) or "PackageNotFoundError" in str(docx_error):
+                                        return f"DOCX文件已损坏或格式不正确，无法读取: {os.path.basename(file_path)}"
+                                    else:
+                                        return f"DOCX文件处理失败: PDF转换失败且直接读取也失败 {os.path.basename(file_path)} (错误: {str(docx_error)})"
+                            return f"{file_type.upper()}文件转PDF失败: 转换后的PDF文件未找到"
+                    except Exception as e:
+                        logger.error(f"LLM OCR mode conversion failed: {e}")
+                        return f"{file_type.upper()}文件LLM OCR处理失败: {os.path.basename(file_path)} (转换错误: {str(e)})"
+                
+                # Step 2: Convert PDF to images and extract text using LLM OCR
+                # Create a temporary directory for image conversion if not already created
+                if temp_dir is None:
+                    temp_dir = tempfile.mkdtemp()
+                    
+                text = pdfurl2ocr(pdf_file_path, temp_dir)
+                
+                # Clean up temp directory if created
+                if temp_dir and os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                
+                return text
+                
+            except Exception as e:
+                logger.error(f"LLM OCR mode error: {e}")
+                return f"{file_type.upper()}文件LLM OCR处理失败: {os.path.basename(file_path)} (错误: {str(e)})"
+        
+        # If use_soffice is enabled, convert any file to PDF first using soffice
+        elif use_soffice:
+            logger.info(f"Converting {file_type} file to PDF using soffice: {os.path.basename(file_path)}")
+            try:
+                
+                # Create temporary directory for conversion
+                temp_dir = tempfile.mkdtemp()
+                
+                try:
+                    # Convert file to PDF using soffice
+                    subprocess.run([
+                        "soffice",
+                        "--headless",
+                        "--convert-to",
+                        "pdf",
+                        file_path,
+                        "--outdir",
+                        temp_dir
+                    ], check=True, capture_output=True, text=True)
+                    
+                    # Find the converted PDF file
+                    base_name = os.path.splitext(os.path.basename(file_path))[0]
+                    converted_file = os.path.join(temp_dir, f"{base_name}.pdf")
+                    
+                    if os.path.exists(converted_file):
+                        # Extract text from the converted PDF
+                        text = extract_text_from_file(converted_file, 'pdf', False, False)
+                        return text
+                    else:
+                        logger.error(f"Conversion failed: converted file not found at {converted_file}")
+                        return f"{file_type.upper()}文件转换失败: {os.path.basename(file_path)}"
+                
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"soffice conversion failed: {e}")
+                    return f"{file_type.upper()}文件转换失败: {os.path.basename(file_path)} (soffice转换错误: {e.stderr})"
+                except Exception as e:
+                    logger.error(f"{file_type.upper()} conversion error: {e}")
+                    return f"{file_type.upper()}文件转换失败: {os.path.basename(file_path)} (错误: {str(e)})"
+                finally:
+                    # Clean up temp directory if it still exists
+                    if os.path.exists(temp_dir):
+                        shutil.rmtree(temp_dir, ignore_errors=True)
+                        
+            except ImportError:
+                logger.warning("subprocess not available, using fallback")
+                return f"{file_type.upper()}文件: {os.path.basename(file_path)} (需要安装相关依赖进行转换)"
+        
         if file_type == 'pdf':
             # PDF text extraction
             try:
@@ -1021,8 +1169,6 @@ def extract_text_from_file(file_path: str, file_type: str) -> str:
         elif file_type == 'word':
             # Word document text extraction - convert all Word formats to PDF first
             try:
-                import subprocess
-                
                 # Convert all Word document formats (.doc, .wps, .docx, .docm) to PDF using soffice
                 file_ext = os.path.splitext(file_path)[1].lower()
                 logger.info(f"Converting {file_ext} file to PDF: {file_path}")
@@ -1085,8 +1231,6 @@ def extract_text_from_file(file_path: str, file_type: str) -> str:
         elif file_type == 'excel':
             # Excel text extraction - convert to PDF first
             try:
-                import subprocess
-                
                 # Convert Excel files (.xls, .xlsx) to PDF using soffice
                 file_ext = os.path.splitext(file_path)[1].lower()
                 logger.info(f"Converting {file_ext} file to PDF: {file_path}")
@@ -1279,7 +1423,7 @@ async def extract_attachment_text(org_name: str, request: TextExtractionRequest)
         for attachment in selected_attachments:
             try:
                 logger.info(f"Extracting text from {attachment.fileName}")
-                content = extract_text_from_file(attachment.filePath, attachment.fileType)
+                content = extract_text_from_file(attachment.filePath, attachment.fileType, request.use_soffice, request.use_llm_ocr)
                 
                 result = {
                     "id": attachment.id,

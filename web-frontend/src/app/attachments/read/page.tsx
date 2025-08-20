@@ -53,6 +53,8 @@ export default function AttachmentReadPage() {
   const [batchMode, setBatchMode] = useState(true);
   const [pdfMode, setPdfMode] = useState(false);
   const [halfMode, setHalfMode] = useState(false);
+  const [sofficeMode, setSofficeMode] = useState(false);
+  const [llmOcrMode, setLlmOcrMode] = useState(false);
   const [startIndex, setStartIndex] = useState(0);
   const [endIndex, setEndIndex] = useState(10);
   const [extractedResults, setExtractedResults] = useState<any[]>([]);
@@ -210,7 +212,9 @@ export default function AttachmentReadPage() {
         },
         body: JSON.stringify({
           attachment_ids: fileIds,
-          extract_all: false
+          extract_all: false,
+          use_soffice: sofficeMode,
+          use_llm_ocr: llmOcrMode
         })
       });
 
@@ -407,6 +411,22 @@ export default function AttachmentReadPage() {
                     onCheckedChange={(checked) => setHalfMode(checked === true)}
                   />
                   <label htmlFor="halfMode" className="text-sm font-medium">半页模式</label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="sofficeMode" 
+                    checked={sofficeMode}
+                    onCheckedChange={(checked) => setSofficeMode(checked === true)}
+                  />
+                  <label htmlFor="sofficeMode" className="text-sm font-medium">soffice转PDF</label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="llmOcrMode" 
+                    checked={llmOcrMode}
+                    onCheckedChange={(checked) => setLlmOcrMode(checked === true)}
+                  />
+                  <label htmlFor="llmOcrMode" className="text-sm font-medium">LLM OCR模式</label>
                 </div>
               </div>
               
