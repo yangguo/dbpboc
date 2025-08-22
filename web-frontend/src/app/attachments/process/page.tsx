@@ -11,8 +11,13 @@ import { config } from "@/lib/config";
 import { 
   RefreshCw, 
   AlertCircle, 
-  Settings
+  Settings,
+  Play,
+  CheckSquare,
+  Square,
+  Download
 } from "lucide-react";
+import { Tooltip } from "@/components/ui/tooltip";
 
 // City list for organization selection
 const cityList = [
@@ -25,6 +30,24 @@ const cityList = [
 interface ProcessedData {
   id: string;
   [key: string]: any;
+}
+
+interface ExtractedInfo {
+  id: string;
+  // 后端原始字段
+  行政处罚决定书文号?: string;
+  // 前端规范化字段
+  决定书文号?: string;
+  被处罚当事人?: string;
+  主要违法违规事实?: string;
+  行政处罚依据?: string;
+  行政处罚决定?: string;
+  作出处罚决定的机关名称?: string;
+  作出处罚决定的日期?: string;
+  行业?: string;
+  罚没总金额?: string;
+  违规类型?: string;
+  监管地区?: string;
 }
 
 const defaultColumns = [
@@ -44,36 +67,10 @@ export default function AttachmentProcessPage() {
   const [selectedOrg, setSelectedOrg] = useState<string>("");
   const [processedData, setProcessedData] = useState<ProcessedData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-
-  // Mock data for demonstration
-  const mockProcessedData: ProcessedData[] = [
-    {
-      id: "1",
-      "序号": "1",
-      "企业名称": "某银行股份有限公司",
-      "处罚决定书文号": "京银罚字[2024]001号",
-      "违法行为类型": "违规放贷",
-      "行政处罚内容": "罚款50万元",
-      "作出行政处罚决定机关名称": "中国人民银行北京营业管理部",
-      "作出行政处罚决定日期": "2024-01-15",
-      "备注": "",
-      "link": "http://beijing.pbc.gov.cn/case/001",
-      "content": "某银行股份有限公司因违规放贷被处罚款50万元，处罚决定书文号为京银罚字[2024]001号。"
-    },
-    {
-      id: "2",
-      "序号": "2", 
-      "企业名称": "某金融服务公司",
-      "处罚决定书文号": "京银罚字[2024]002号",
-      "违法行为类型": "反洗钱违规",
-      "行政处罚内容": "罚款30万元",
-      "作出行政处罚决定机关名称": "中国人民银行北京营业管理部",
-      "作出行政处罚决定日期": "2024-01-20",
-      "备注": "",
-      "link": "http://beijing.pbc.gov.cn/case/002", 
-      "content": "某金融服务公司因反洗钱违规被处罚款30万元，处罚决定书文号为京银罚字[2024]002号。"
-    }
-  ];
+  const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [extractedResults, setExtractedResults] = useState<ExtractedInfo[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (selectedOrg) {
@@ -97,18 +94,252 @@ export default function AttachmentProcessPage() {
       setProcessedData(transformedData);
     } catch (error) {
       console.error("Failed to load processed data:", error);
-      // Fallback to mock data for development
-      setProcessedData(mockProcessedData);
+      // Set empty data if API fails
+      setProcessedData([]);
     } finally {
       setIsLoading(false);
     }
+    // Reset selections when loading new data
+    setSelectedRecords(new Set());
+    setExtractedResults([]);
+  };
+
+  const toggleRecordSelection = (recordId: string) => {
+    const newSelected = new Set(selectedRecords);
+    if (newSelected.has(recordId)) {
+      newSelected.delete(recordId);
+    } else {
+      newSelected.add(recordId);
+    }
+    setSelectedRecords(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedRecords.size === processedData.length) {
+      setSelectedRecords(new Set());
+    } else {
+      setSelectedRecords(new Set(processedData.map(row => row.id)));
+    }
+  };
+
+  const extractPenaltyInfo = async (text: string): Promise<any> => {
+    try {
+      const response = await fetch(`${config.backendUrl}/api/v1/cases/extract`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: '', // 后端已有完整的提示词逻辑
+          text: text
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('LLM API request failed');
+      }
+      
+      const result = await response.json();
+      return {
+        success: result.success,
+        data: result.data
+      };
+    } catch (error) {
+      console.error('LLM extraction failed:', error);
+      return {
+        success: false,
+        error: `LLM分析失败: ${error}`,
+        data: {
+          行政处罚决定书文号: '',
+          被处罚当事人: '',
+          主要违法违规事实: '',
+          行政处罚依据: '',
+          行政处罚决定: '',
+          作出处罚决定的机关名称: '',
+          作出处罚决定的日期: '',
+          行业: '',
+          罚没总金额: '0',
+          违规类型: '',
+          监管地区: ''
+        }
+      };
+    }
+  };
+
+  const handleProcessSelected = async () => {
+    if (selectedRecords.size === 0) {
+      alert('请先选择要处理的记录');
+      return;
+    }
+    
+    setIsProcessing(true);
+    const results: ExtractedInfo[] = [];
+    
+    try {
+      const pick = (obj: any, ...keys: string[]): string => {
+        for (const k of keys) {
+          const v = obj?.[k];
+          if (v !== undefined && v !== null) {
+            const s = String(v).trim();
+            if (s !== '') return s;
+          }
+        }
+        return '';
+      };
+
+      const normalizeRow = (raw: any, id: string): ExtractedInfo => {
+         // 调试：输出原始数据的所有字段
+         console.log('原始数据字段:', Object.keys(raw));
+         console.log('原始数据内容:', raw);
+         
+         const result = {
+        id,
+        // 后端字段，与后端保持完全一致
+        行政处罚决定书文号: pick(raw, '行政处罚决定书文号'),
+        被处罚当事人: pick(raw, '被处罚当事人'),
+        主要违法违规事实: pick(raw, '主要违法违规事实'),
+        行政处罚依据: pick(raw, '行政处罚依据'),
+        行政处罚决定: pick(raw, '行政处罚决定'),
+        作出处罚决定的机关名称: pick(raw, '作出处罚决定的机关名称'),
+        作出处罚决定的日期: pick(raw, '作出处罚决定的日期'),
+        行业: pick(raw, '行业'),
+        罚没总金额: pick(raw, '罚没总金额'),
+        违规类型: pick(raw, '违规类型'),
+        监管地区: pick(raw, '监管地区')
+      };
+      
+      console.log('规范化后的行政处罚决定书文号:', result.行政处罚决定书文号);
+      return result;
+      };
+      for (const recordId of selectedRecords) {
+        const record = processedData.find(r => r.id === recordId);
+        if (record && record.content) {
+          const extractResult = await extractPenaltyInfo(record.content);
+          console.log('原始提取结果:', extractResult);
+          
+          // 处理新的数据结构：data.items 是数组
+          if (extractResult.success && extractResult.data) {
+            if (Array.isArray(extractResult.data)) {
+              // 如果data直接是数组
+              extractResult.data.forEach((item: any, index: number) => {
+                console.log('处理数组项:', item);
+                results.push(normalizeRow(item, `${recordId}-${index}`));
+              });
+            } else if (extractResult.data.items && Array.isArray(extractResult.data.items)) {
+              // 如果有items数组
+              extractResult.data.items.forEach((item: any, index: number) => {
+                console.log('处理items项:', item);
+                results.push(normalizeRow(item, `${recordId}-${index}`));
+              });
+            } else {
+              // 单个对象格式
+              console.log('处理单个对象:', extractResult.data);
+              results.push(normalizeRow(extractResult.data, recordId));
+            }
+          }
+        }
+      }
+      
+      setExtractedResults(results);
+      console.log('最终结果:', results);
+      console.log('第一条结果的所有字段:', results[0] ? Object.keys(results[0]) : '无结果');
+      
+      // 详细输出第一条记录的所有字段值
+      if (results[0]) {
+        console.log('=== 第一条记录详细信息（使用后端字段）===');
+        console.log('行政处罚决定书文号:', results[0]['行政处罚决定书文号']);
+        console.log('作出处罚决定的机关名称:', results[0]['作出处罚决定的机关名称']);
+        console.log('行业:', results[0]['行业']);
+        console.log('违规类型:', results[0]['违规类型']);
+        console.log('完整对象:', JSON.stringify(results[0], null, 2));
+      }
+    } catch (error) {
+      console.error('Processing failed:', error);
+      alert('处理过程中发生错误，请重试');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSaveResults = async () => {
+    if (extractedResults.length === 0) {
+      alert('没有可保存的结果');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(`${config.backendUrl}/api/v1/attachments/save-extracted-data/${encodeURIComponent(selectedOrg)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          data: extractedResults,
+          timestamp: new Date().toISOString()
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save extracted data');
+      }
+
+      const result = await response.json();
+      alert(`结果已成功保存: ${result.filename || '已保存'}`);
+    } catch (error) {
+      console.error('Error saving results:', error);
+      alert('保存结果时出错，请重试');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const exportToCSV = () => {
+    if (extractedResults.length === 0) {
+      alert('没有可导出的数据');
+      return;
+    }
+
+    const headers = [
+      '记录ID', '行政处罚决定书文号', '被处罚当事人', '主要违法违规事实', '行政处罚依据',
+      '行政处罚决定', '作出处罚决定的机关名称', '作出处罚决定的日期', '行业',
+      '罚没总金额', '违规类型', '监管地区'
+    ];
+
+    const csvContent = [
+      headers.join(','),
+      ...extractedResults.map(result => [
+        result.id,
+        `"${((result['行政处罚决定书文号'] || '') as string).replace(/"/g, '""')}"`,
+        `"${((result.被处罚当事人 || '') as string).replace(/"/g, '""')}"`,
+        `"${((result.主要违法违规事实 || '') as string).replace(/"/g, '""')}"`,
+        `"${((result.行政处罚依据 || '') as string).replace(/"/g, '""')}"`,
+        `"${((result.行政处罚决定 || '') as string).replace(/"/g, '""')}"`,
+        `"${((result['作出处罚决定的机关名称'] || '') as string).replace(/"/g, '""')}"`,
+        `"${((result.作出处罚决定的日期 || '') as string).replace(/"/g, '""')}"`,
+        `"${((result['行业'] || '') as string).replace(/"/g, '""')}"`,
+        (result['罚没总金额'] || '0') as string,
+        `"${((result['违规类型'] || '') as string).replace(/"/g, '""')}"`,
+        `"${((result['监管地区'] || '') as string).replace(/"/g, '""')}"`
+      ].join(','))
+    ].join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `penalty_data_${selectedOrg}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const columns = processedData.length > 0 ? Object.keys(processedData[0]).filter(key => key !== 'id' && (key === 'link' || key === 'content')) : [];
 
   return (
     <MainLayout>
-      <div className="space-y-6">
+      <div className="space-y-6 w-full max-w-none">
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">内容处理</h1>
@@ -174,10 +405,28 @@ export default function AttachmentProcessPage() {
         {selectedOrg && (
           <Card>
             <CardHeader>
-              <CardTitle>数据表格</CardTitle>
-              <CardDescription>
-                {processedData.length > 0 ? `共 ${processedData.length} 条记录` : '暂无数据'}
-              </CardDescription>
+              <div className="flex justify-between items-center">
+                <div>
+                  <CardTitle>数据表格</CardTitle>
+                  <CardDescription>
+                    {processedData.length > 0 ? `共 ${processedData.length} 条记录，已选择 ${selectedRecords.size} 条` : '暂无数据'}
+                  </CardDescription>
+                </div>
+                {processedData.length > 0 && (
+                  <Button 
+                    onClick={handleProcessSelected}
+                    disabled={selectedRecords.size === 0 || isProcessing}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-md shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    {isProcessing ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Play className="h-4 w-4" />
+                    )}
+                    {isProcessing ? '处理中...' : '处理选中记录'}
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -197,12 +446,24 @@ export default function AttachmentProcessPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-16 text-center">
+                          <button
+                            onClick={toggleSelectAll}
+                            className="flex items-center justify-center w-full"
+                          >
+                            {selectedRecords.size === processedData.length ? (
+                              <CheckSquare className="h-4 w-4" />
+                            ) : (
+                              <Square className="h-4 w-4" />
+                            )}
+                          </button>
+                        </TableHead>
                         {columns.map((col) => (
                           <TableHead 
                             key={col} 
                             className={`
                               ${col === 'link' ? 'min-w-48' : ''}
-                              ${col === 'content' ? 'min-w-64' : ''}
+                              ${col === 'content' ? 'w-80' : ''}
                               ${col !== 'link' && col !== 'content' ? 'min-w-32' : ''}
                             `}
                           >
@@ -214,9 +475,21 @@ export default function AttachmentProcessPage() {
                     <TableBody>
                       {processedData.map((row, rowIndex) => (
                         <TableRow key={row.id}>
+                          <TableCell className="text-center">
+                            <button
+                              onClick={() => toggleRecordSelection(row.id)}
+                              className="flex items-center justify-center w-full"
+                            >
+                              {selectedRecords.has(row.id) ? (
+                                <CheckSquare className="h-4 w-4" />
+                              ) : (
+                                <Square className="h-4 w-4" />
+                              )}
+                            </button>
+                          </TableCell>
                           {columns.map((col) => (
                             <TableCell key={col}>
-                              <div className="cursor-default hover:bg-gray-50 p-1 rounded min-h-8 flex items-center">
+                              <div className="cursor-default p-1 rounded min-h-8 flex items-center">
                                 {col === 'link' ? (
                                   <a 
                                     href={String(row[col] || '')} 
@@ -227,9 +500,15 @@ export default function AttachmentProcessPage() {
                                     {String(row[col] || '')}
                                   </a>
                                 ) : col === 'content' ? (
-                                  <span className="truncate max-w-md" title={String(row[col] || '')}>
-                                    {String(row[col] || '')}
-                                  </span>
+                                  <Tooltip 
+                                    content={String(row[col] || '')}
+                                    maxWidth="max-w-lg"
+                                    position="top"
+                                  >
+                                    <span className="truncate cursor-help">
+                                      {String(row[col] || '')}
+                                    </span>
+                                  </Tooltip>
                                 ) : (
                                   <span className="truncate max-w-xs">
                                     {String(row[col] || '')}
@@ -247,7 +526,144 @@ export default function AttachmentProcessPage() {
             </CardContent>
           </Card>
         )}
-      </div>
-    </MainLayout>
-  );
-}
+
+        {/* Extracted Results Display */}
+        {extractedResults.length > 0 && (
+          <Card className="mt-6 w-full">
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <div>
+                  <CardTitle>提取结果</CardTitle>
+                  <CardDescription>
+                    共提取 {extractedResults.length} 条记录的信息
+                  </CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Button 
+                    onClick={exportToCSV}
+                    variant="outline"
+                    className="flex items-center gap-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    导出CSV
+                  </Button>
+                  <Button 
+                    onClick={handleSaveResults}
+                    disabled={isSaving}
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-md shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    {isSaving ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4" />
+                    )}
+                    {isSaving ? '保存中...' : '保存结果'}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* Detailed Table */}
+              <div className="overflow-x-auto w-full">
+                <div className="min-w-[1800px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[80px] text-center">记录ID</TableHead>
+                        <TableHead className="w-[180px]">行政处罚决定书文号</TableHead>
+                        <TableHead className="w-[160px]">被处罚当事人</TableHead>
+                        <TableHead className="w-[320px]">主要违法违规事实</TableHead>
+                        <TableHead className="w-[220px]">行政处罚依据</TableHead>
+                        <TableHead className="w-[170px]">行政处罚决定</TableHead>
+                        <TableHead className="w-[200px]">作出处罚决定的机关名称</TableHead>
+                        <TableHead className="w-[140px] text-center">作出处罚决定的日期</TableHead>
+                        <TableHead className="w-[120px] text-center">行业</TableHead>
+                        <TableHead className="w-[140px] text-right">罚没总金额</TableHead>
+                        <TableHead className="w-[180px] text-center">违规类型</TableHead>
+                        <TableHead className="w-[120px] text-center">监管地区</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                  <TableBody>
+                    {extractedResults.map((result, index) => (
+                      <TableRow key={result.id || index} className="hover:bg-muted/50">
+                        <TableCell className="text-center font-medium whitespace-nowrap">
+                          {result.id}
+                        </TableCell>
+                        <TableCell className="w-[180px]">
+                           <div className="break-words leading-relaxed" title={(result['决定书文号'] || result['行政处罚决定书文号']) as string}>
+                             {result['决定书文号'] || result['行政处罚决定书文号'] || '-'}
+                           </div>
+                         </TableCell>
+                        <TableCell className="w-[160px]">
+                          <div className="break-words leading-relaxed font-medium" title={result['被处罚当事人']}>
+                            {result['被处罚当事人'] || '-'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-[320px]">
+                          <div className="break-words leading-relaxed" title={result['主要违法违规事实']}>
+                            {result['主要违法违规事实'] ? (
+                              <ul className="list-disc pl-5">
+                                {(result['主要违法违规事实'] || '').split('；').map((fact: string, index: number) => (
+                                  <li key={index}>{fact}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              '-'
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-[220px]">
+                          <div className="break-words leading-relaxed" title={result['行政处罚依据']}>
+                            {result['行政处罚依据'] || '-'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-[170px]">
+                          <div className="break-words leading-relaxed" title={result['行政处罚决定']}>
+                            {result['行政处罚决定'] || '-'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-[200px]">
+                          <div className="break-words leading-relaxed" title={result['作出处罚决定的机关名称']}>
+                            {result['作出处罚决定的机关名称'] || '-'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-[140px] text-center">
+                          <div className="font-medium whitespace-nowrap" title={result['作出处罚决定的日期']}>
+                            {result['作出处罚决定的日期'] || '-'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-[120px] text-center">
+                          <div className="break-words leading-relaxed" title={result['行业']}>
+                            {result['行业'] || '-'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-[140px] text-right">
+                          <div className="font-semibold text-destructive whitespace-nowrap">
+                            {result['罚没总金额'] && result['罚没总金额'] !== '0' ? 
+                              `¥${Number(result['罚没总金额']).toLocaleString()}` : '-'
+                            }
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-[180px] text-center">
+                          <div className="break-words leading-relaxed" title={result['违规类型']}>
+                            {result['违规类型'] || '-'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-[120px] text-center">
+                          <div className="break-words leading-relaxed" title={result['监管地区']}>
+                            {result['监管地区'] || '-'}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+       </div>
+     </MainLayout>
+   );
+ }

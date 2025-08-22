@@ -1,16 +1,20 @@
-from typing import List
+from typing import List, Dict, Any
 import logging
 from fastapi import APIRouter, HTTPException, status, Query
 from pydantic import BaseModel
 from app.models.case import Case, CaseCreate, CaseUpdate, CaseSearchParams, CaseResponse
 from app.services.case_service import CaseService
 from app.core.database import get_database
+from app.core.config import settings
 from bson import ObjectId
 import pandas as pd
 import glob
 import os
 import time
 import random
+import json
+import re
+import openai
 from datetime import datetime
 
 from selenium import webdriver
@@ -21,6 +25,416 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
+
+# LLM related models
+class LLMExtractRequest(BaseModel):
+    prompt: str = ""  # 可选参数，后端有内置提示词逻辑
+    text: str
+
+class LLMExtractResponse(BaseModel):
+    success: bool
+    data: Dict[str, Any]
+    message: str = ""
+
+def extract_penalty_info(text): 
+     """使用LLM提取行政处罚决定书关键信息""" 
+     try: 
+         # 规范化字段名称，适配前端表格显示的列名（提升作用域，供所有解析分支复用）
+         def normalize_item(item: dict, idx: int) -> dict:
+             def pick(*keys: str) -> str:
+                 for k in keys:
+                     v = item.get(k)
+                     if v is None:
+                         continue
+                     s = str(v).strip()
+                     if s != "":
+                         return s
+                 return ""
+
+             # Compute values once
+             doc_no = pick("行政处罚决定书文号", "决定书文号", "处罚文号")
+             facts = pick("主要违法违规事实", "违法事实", "违法违规事实")
+             basis = pick("行政处罚依据", "处罚依据")
+             decision = pick("行政处罚决定", "处罚决定")
+             agency = pick("作出处罚决定的机关名称", "处罚机关", "决定机关", "作出处罚机关名称")
+             date_ = pick("作出处罚决定的日期", "决定日期", "处罚日期")
+             amount = pick("罚没总金额", "罚没金额", "罚款金额")
+
+             # Return both legacy and normalized keys to keep FE compatibility
+             return {
+                 # Common/normalized fields
+                 "记录ID": str(idx + 1),
+                 "决定书文号": doc_no,
+                 "被处罚当事人": pick("被处罚当事人", "当事人", "被处罚单位", "被处罚个人"),
+                 "违法事实": facts,
+                 "处罚依据": basis,
+                 "处罚决定": decision,
+                 "处罚机关": agency,
+                 "决定日期": date_,
+                 "行业": pick("行业"),
+                 "罚没金额": amount,
+                 "违规类型": pick("违规类型"),
+                 "监管地区": pick("监管地区", "地区", "省份", "属地"),
+                 # Legacy fields expected by some FE pages
+                 "行政处罚决定书文号": doc_no,
+                 "主要违法违规事实": facts,
+                 "行政处罚依据": basis,
+                 "行政处罚决定": decision,
+                 "作出处罚决定的机关名称": agency,
+                 "作出处罚决定的日期": date_,
+                 "罚没总金额": amount,
+             }
+
+         # 检查API密钥是否配置 
+         if not settings.OPENAI_API_KEY: 
+             print("API密钥未配置") 
+             return { 
+                 "success": False, 
+                 "error": "API密钥未配置，无法使用LLM服务" 
+             } 
+         
+         # 检查输入文本是否为空 
+         if not text or not text.strip(): 
+             return { 
+                 "success": False, 
+                 "error": "输入文本为空" 
+             } 
+         # 构建提示词 
+         prompt = f"""你是一个专业的文本信息抽取模型。请从输入的文本中提取行政处罚信息。 
+ 
+ 输入文本可能是表格格式、段落文本或其他格式的行政处罚数据。请仔细分析文本内容，识别所有的处罚记录。 
+ 
+ 对于每个处罚记录，请提取以下信息并严格按照JSON数组格式输出： 
+ 
+ [ 
+   {{ 
+     "行政处罚决定书文号": "文号信息", 
+     "被处罚当事人": "当事人名称", 
+     "主要违法违规事实": "违法违规行为描述", 
+     "行政处罚依据": "法律依据", 
+     "行政处罚决定": "具体处罚内容", 
+     "作出处罚决定的机关名称": "决定机关", 
+     "作出处罚决定的日期": "日期", 
+     "行业": "所属行业", 
+     "罚没总金额": "数字形式的金额（单位：元）", 
+     "违规类型": "违规类型分类", 
+     "监管地区": "相关地区或省份" 
+   }} 
+ ] 
+ 
+ 重要说明： 
+ 1. 即使文本中只有部分信息，也要尽力提取可用的字段 
+ 2. 缺失的信息用空字符串""填充 
+ 3. 金额转换规则：万元转换为元（如5万元=50000，2.5万元=25000） 
+ 4. 所有字段值必须是字符串类型 
+ 5. 只返回JSON数组，不要添加解释文字或markdown标记 
+ 6. 如果文本中没有明确的处罚信息，返回空数组[] 
+ 
+ 输入数据： 
+ {text}""" 
+         
+         # 初始化OpenAI客户端
+         from openai import OpenAI
+         client = OpenAI(
+             api_key=settings.OPENAI_API_KEY,
+             base_url=getattr(settings, 'OPENAI_BASE_URL', None)
+         )
+         
+         # Add retry logic with exponential backoff 
+         import time 
+         max_retries = 3 
+         base_delay = 2 
+         
+         # 根据文本长度动态调整超时时间 
+         text_length = len(text) 
+         if text_length > 5000: 
+             timeout_seconds = 360.0  # 6分钟用于超长文本 
+             max_tokens = 10000 
+         elif text_length > 2000: 
+             timeout_seconds = 300.0  # 5分钟用于长文本 
+             max_tokens = 10000 
+         else: 
+             timeout_seconds = 180.0  # 3分钟用于普通文本 
+             max_tokens = 10000 
+         
+         print(f"处理文本长度: {text_length}字符, 设置超时: {timeout_seconds}秒, 最大tokens: {max_tokens}") 
+         
+         for attempt in range(max_retries): 
+             try: 
+                 response = client.chat.completions.create( 
+                     model=settings.OPENAI_MODEL, 
+                     messages=[ 
+                         {"role": "system", "content": "你是一个专业的文本信息抽取助手。你必须严格按照要求返回有效的JSON数组格式，不要添加任何markdown标记、解释文字或其他内容。确保返回的内容可以直接被json.loads()解析。"}, 
+                         {"role": "user", "content": prompt} 
+                     ], 
+                     temperature=0.1, 
+                     max_tokens=max_tokens, 
+                     timeout=timeout_seconds 
+                 ) 
+                 break  # Success, exit retry loop 
+             except (openai.APITimeoutError, openai.APIConnectionError) as e: 
+                 if attempt == max_retries - 1:  # Last attempt 
+                     raise e 
+                 delay = base_delay * (2 ** attempt)  # Exponential backoff 
+                 print(f"API调用失败 (尝试 {attempt + 1}/{max_retries}), {delay}秒后重试: {str(e)}") 
+                 time.sleep(delay) 
+         
+         # 解析响应 
+         result_text = response.choices[0].message.content.strip() 
+         print(f"LLM原始响应: {result_text[:500]}...") 
+         
+         # 清理响应文本，移除可能的markdown代码块标记 
+         if result_text.startswith('```json'): 
+             result_text = result_text[7:] 
+         if result_text.startswith('```'): 
+             result_text = result_text[3:] 
+         if result_text.endswith('```'): 
+             result_text = result_text[:-3] 
+         result_text = result_text.strip() 
+         print(f"清理后的响应: {result_text[:300]}...") 
+         
+         try: 
+            # 尝试直接解析JSON 
+            result = json.loads(result_text) 
+            # 确保结果是列表格式 
+            if not isinstance(result, list): 
+                result = [result]  # 如果不是列表，转换为单元素列表 
+            print(f"成功解析JSON，提取到 {len(result)} 条记录") 
+            
+            # 检查是否为空结果 
+            if len(result) == 0: 
+                print("警告: LLM返回了空数组") 
+                return { 
+                    "success": True, 
+                    "data": {"items": []}, 
+                    "message": "未从文本中提取到任何处罚信息" 
+                } 
+            
+            normalized = [normalize_item(item, i) for i, item in enumerate(result)]
+
+            return {
+                "success": True,
+                "data": {"items": normalized}
+            }
+         except json.JSONDecodeError: 
+             # 如果JSON解析失败，尝试提取JSON数组部分 
+             import re 
+             
+             # 首先尝试匹配完整的JSON数组（支持嵌套） 
+             json_array_pattern = r'\[(?:[^[\]]*|\[[^\]]*\])*\]' 
+             json_array_match = re.search(json_array_pattern, result_text, re.DOTALL) 
+             if json_array_match: 
+                 try: 
+                     result = json.loads(json_array_match.group()) 
+                     if isinstance(result, list): 
+                         print(f"通过正则表达式匹配成功解析JSON数组，提取到 {len(result)} 条记录") 
+                         # 标准化字段，确保前端列名一致
+                         normalized = [normalize_item(item, i) for i, item in enumerate(result)]
+                         return { 
+                             "success": True, 
+                             "data": {"items": normalized} 
+                         } 
+                 except json.JSONDecodeError: 
+                     pass 
+             
+             # 如果数组匹配失败，尝试匹配单个JSON对象 
+             json_object_pattern = r'\{(?:[^{}]*|\{[^}]*\})*\}' 
+             json_matches = re.findall(json_object_pattern, result_text, re.DOTALL) 
+             if json_matches: 
+                 try: 
+                     results = [] 
+                     for match in json_matches: 
+                         obj = json.loads(match) 
+                         results.append(obj) 
+                     print(f"通过对象匹配成功解析JSON，提取到 {len(results)} 条记录") 
+                     normalized = [normalize_item(item, i) for i, item in enumerate(results)]
+                     return { 
+                         "success": True, 
+                         "data": {"items": normalized} 
+                     } 
+                 except json.JSONDecodeError: 
+                     pass 
+             
+             # 最后尝试：查找所有可能的JSON片段并尝试修复 
+             try: 
+                 # 尝试修复常见的JSON格式问题 
+                 fixed_text = result_text 
+                 # 修复可能的尾随逗号 
+                 fixed_text = re.sub(r',\s*}', '}', fixed_text) 
+                 fixed_text = re.sub(r',\s*]', ']', fixed_text) 
+                 
+                 result = json.loads(fixed_text) 
+                 if not isinstance(result, list): 
+                     result = [result] 
+                 normalized = [normalize_item(item, i) for i, item in enumerate(result)]
+                 return { 
+                     "success": True, 
+                     "data": {"items": normalized} 
+                 } 
+             except json.JSONDecodeError: 
+                 pass 
+             
+             # 如果所有JSON解析都失败，返回失败状态 
+             print(f"JSON解析完全失败，原始响应: {result_text[:200]}...") 
+             
+             return { 
+                 "success": False, 
+                 "error": "无法解析LLM返回的JSON格式", 
+                 "raw_response": result_text[:500] + "..." if len(result_text) > 500 else result_text 
+             } 
+             
+     except openai.APIConnectionError as e: 
+         print(f"API连接失败详情: {str(e)}") 
+         return { 
+             "success": False, 
+             "error": f"API连接失败: {str(e)}" 
+         } 
+     except openai.APITimeoutError as e: 
+         print(f"API请求超时详情: {str(e)}") 
+         return { 
+             "success": False, 
+             "error": f"API请求超时: {str(e)}" 
+         } 
+     except openai.RateLimitError as e: 
+         print(f"API限流详情: {str(e)}") 
+         return { 
+             "success": False, 
+             "error": f"API限流: {str(e)}. 请稍后重试" 
+         } 
+     except openai.AuthenticationError as e: 
+         print(f"API认证失败详情: {str(e)}") 
+         return { 
+             "success": False, 
+             "error": f"API认证失败: {str(e)}. 请检查API密钥" 
+         } 
+     except Exception as e: 
+         print(f"LLM分析失败详情: {str(e)}") 
+         print(f"输入文本长度: {len(text) if text else 0}") 
+         return { 
+              "success": False, 
+              "error": f"LLM分析失败: {str(e)}" 
+          }
+
+def extract_penalty_info_old(text: str) -> Dict[str, Any]:
+    """使用LLM提取行政处罚决定书关键信息"""
+    try:
+        # 检查是否配置了OpenAI API
+        if not hasattr(settings, 'OPENAI_API_KEY') or not settings.OPENAI_API_KEY:
+            logger.warning("OpenAI API key not configured, returning mock data")
+            # 返回模拟数据
+            return {
+                "success": True,
+                "data": {
+                    "行政处罚决定书文号": "模拟文号-2024-001",
+                    "被处罚当事人": "模拟公司名称",
+                    "主要违法违规事实": "模拟违法事实描述",
+                    "行政处罚依据": "相关法律条款",
+                    "行政处罚决定": "罚款处理决定",
+                    "作出处罚决定的机关名称": "模拟监管机构",
+                    "作出处罚决定的日期": "2024-01-01",
+                    "行业": "金融业",
+                    "罚没总金额": "100000",
+                    "违规类型": "违规操作",
+                    "监管地区": "模拟区域"
+                }
+            }
+        
+        # 构建提示词
+        prompt = f"""你是一个文本信息抽取模型。
+请从以下文本中提取以下关键信息，并以 JSON 格式输出：
+  "行政处罚决定书文号",
+  "被处罚当事人",
+  "主要违法违规事实",
+  "行政处罚依据"（以字符串形式输出所有相关条文，多个条文用分号分隔）,
+  "行政处罚决定",
+  "作出处罚决定的机关名称",
+  "作出处罚决定的日期",
+  "行业",
+  "罚没总金额"（必须转换为纯数字形式，包含罚款金额和没收金额的总和，单位为元。例如：10万元 → 100000，5.5万元 → 55000，1000元 → 1000。如果包含多项金额，请计算总和。如果无法确定具体数字，填写0）,
+  "违规类型",
+  "监管地区" （相关省份）.
+重要提示：将输出格式化为JSON。只返回JSON响应，不添加其他评论或文本。如果返回的文本不是JSON，将视为失败。所有字段值都必须是字符串类型，不要使用数组或列表格式。
+
+输入文本：{text}"""
+        
+        try:
+            from openai import OpenAI
+            client = OpenAI(
+                api_key=settings.OPENAI_API_KEY,
+                base_url=getattr(settings, 'OPENAI_BASE_URL', None)
+            )
+            
+            response = client.chat.completions.create(
+                model=getattr(settings, 'OPENAI_MODEL', 'gpt-3.5-turbo'),
+                messages=[
+                    {"role": "system", "content": "你是一个专业的文本信息抽取助手。请严格按照要求以JSON格式返回结果。"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=1500
+            )
+            
+            # 解析响应
+            result_text = response.choices[0].message.content.strip()
+            try:
+                # 尝试解析JSON
+                result = json.loads(result_text)
+                return {
+                    "success": True,
+                    "data": result
+                }
+            except json.JSONDecodeError:
+                # 如果JSON解析失败，尝试提取JSON部分
+                json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+                if json_match:
+                    try:
+                        result = json.loads(json_match.group())
+                        return {
+                            "success": True,
+                            "data": result
+                        }
+                    except json.JSONDecodeError:
+                        pass
+                
+                return {
+                    "success": False,
+                    "error": "无法解析LLM返回的JSON格式",
+                    "raw_response": result_text
+                }
+                
+        except Exception as api_error:
+            error_msg = str(api_error)
+            if "APIConnectionError" in str(type(api_error)):
+                return {
+                    "success": False,
+                    "error": f"API连接失败: {error_msg}. 请检查网络连接或API配置"
+                }
+            elif "APITimeoutError" in str(type(api_error)):
+                return {
+                    "success": False,
+                    "error": f"API请求超时: {error_msg}. 网络可能较慢"
+                }
+            elif "RateLimitError" in str(type(api_error)):
+                return {
+                    "success": False,
+                    "error": f"API限流: {error_msg}. 请稍后重试"
+                }
+            elif "AuthenticationError" in str(type(api_error)):
+                return {
+                    "success": False,
+                    "error": f"API认证失败: {error_msg}. 请检查API密钥"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"LLM分析失败: {error_msg}"
+                }
+            
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"LLM分析失败: {str(e)}"
+        }
 
 # Mappings and constants
 cityList = [
@@ -1568,3 +1982,32 @@ async def export_cases_csv(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=cases_export.csv"}
     )
+
+@router.post("/extract", response_model=LLMExtractResponse)
+async def extract_penalty_info_endpoint(request: LLMExtractRequest):
+    """Extract penalty information from text using LLM"""
+    try:
+        logger.info(f"LLM extract request received for text length: {len(request.text)}")
+        
+        # 调用提取函数
+        result = extract_penalty_info(request.text)
+        
+        if result["success"]:
+            return LLMExtractResponse(
+                success=True,
+                data=result["data"],
+                message="提取成功"
+            )
+        else:
+            return LLMExtractResponse(
+                success=False,
+                data={},
+                message=result.get("error", "提取失败")
+            )
+        
+    except Exception as e:
+        logger.error(f"LLM extract endpoint error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"LLM提取失败: {str(e)}"
+        )
