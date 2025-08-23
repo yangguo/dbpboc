@@ -227,8 +227,17 @@ def main():
         # dfl['amount']=dfl['amount'].fillna(0)
         # st.write(dfl)
         # get min and max date of old eventdf
-        min_date = dfl["发布日期"].min()
-        max_date = dfl["发布日期"].max()
+        # Coerce to datetime to avoid mixed-type comparisons (e.g., float vs date)
+        dfl["发布日期"] = pd.to_datetime(dfl["发布日期"], errors="coerce")
+        valid_dates = dfl["发布日期"].dropna()
+        if not valid_dates.empty:
+            min_date = valid_dates.min()
+            max_date = valid_dates.max()
+        else:
+            # Fallback to a sane default if no valid dates
+            today = pd.Timestamp.today().normalize()
+            min_date = today - pd.Timedelta(days=365)
+            max_date = today
 
         # loclist = dfl["区域"].unique().tolist()
         loclist = cityls

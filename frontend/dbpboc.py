@@ -228,13 +228,54 @@ def searchpboc(
 def display_summary():
     # get old sumeventdf
     oldsum2 = get_pbocdetail("")
+    
+    # 获取所有pbocsum数据用于关联发布日期
+    all_sum_list = []
+    for org in org2name.keys():
+        org_sum = get_pbocsum(org)
+        if not org_sum.empty:
+            all_sum_list.append(org_sum)
+    
+    if all_sum_list:
+        sumdf = pd.concat(all_sum_list, ignore_index=True)
+        # 通过link字段关联pbocsum，从pbocsum中获取发布日期和区域
+        if not sumdf.empty and 'link' in oldsum2.columns and 'link' in sumdf.columns:
+            # 使用left join保留所有pbocdtl记录，同时获取发布日期和区域
+            oldsum2 = pd.merge(oldsum2, sumdf[['link', '发布日期', '区域']], 
+                             left_on='link', right_on='link', how='left', suffixes=('_dtl', '_sum'))
+            
+            # 优先使用pbocsum的发布日期，如果没有则使用pbocdtl的date
+            if '发布日期_sum' in oldsum2.columns:
+                oldsum2['发布日期'] = oldsum2['发布日期_sum'].fillna(
+                    pd.to_datetime(oldsum2['date'], errors='coerce'))
+                # 清理多余列
+                oldsum2 = oldsum2.drop(['发布日期_dtl', '发布日期_sum'], axis=1)
+            else:
+                oldsum2["发布日期"] = pd.to_datetime(oldsum2["date"], errors="coerce")
+            
+            # 优先使用pbocsum的区域，如果没有则使用pbocdtl的区域
+            if '区域_sum' in oldsum2.columns:
+                oldsum2['区域'] = oldsum2['区域_sum'].fillna(oldsum2['区域_dtl'])
+                # 清理多余列
+                oldsum2 = oldsum2.drop(['区域_dtl', '区域_sum'], axis=1)
+        else:
+            oldsum2["发布日期"] = pd.to_datetime(oldsum2["date"], errors="coerce")
+    else:
+        oldsum2["发布日期"] = pd.to_datetime(oldsum2["date"], errors="coerce")
+    
     # get length of old eventdf
     oldlen2 = len(oldsum2)
     # display isnull sum
     # st.write(oldsum2.isnull().sum())
-    # get min and max date of old eventdf
-    min_date2 = oldsum2["发布日期"].min()
-    max_date2 = oldsum2["发布日期"].max()
+    # get min and max date of old eventdf (already converted to datetime above)
+    valid_dates = oldsum2["发布日期"].dropna()
+    if not valid_dates.empty:
+        min_date2 = valid_dates.min()
+        max_date2 = valid_dates.max()
+    else:
+        today = pd.Timestamp.today().normalize()
+        min_date2 = today - pd.Timedelta(days=365)
+        max_date2 = today
     # use metric
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -242,15 +283,32 @@ def display_summary():
     with col2:
         st.metric("案例日期范围", f"{min_date2} - {max_date2}")
 
-    # sum max,min date and size by org
-    sumdf2 = (
-        oldsum2.groupby("区域")["发布日期"].agg(["max", "min", "count"]).reset_index()
-    )
-    sumdf2.columns = ["区域", "最近发文日期", "最早发文日期", "案例总数"]
-    # sort by date
-    sumdf2.sort_values(by=["最近发文日期"], ascending=False, inplace=True)
-    # reset index
-    sumdf2.reset_index(drop=True, inplace=True)
+    # sum max,min date and size by org (只统计有效日期的记录)
+    valid_date_records = oldsum2[oldsum2["发布日期"].notna()]
+    
+    if not valid_date_records.empty:
+        sumdf2 = (
+            valid_date_records.groupby("区域")["发布日期"].agg(["max", "min", "count"]).reset_index()
+        )
+        sumdf2.columns = ["区域", "最近发文日期", "最早发文日期", "案例总数"]
+        
+        # 添加所有记录的统计（包括无效日期）
+        all_counts = oldsum2.groupby("区域").size().reset_index(name="总记录数")
+        sumdf2 = pd.merge(sumdf2, all_counts, on="区域", how="right")
+        sumdf2["案例总数"] = sumdf2["案例总数"].fillna(0).astype(int)
+        sumdf2["总记录数"] = sumdf2["总记录数"].fillna(0).astype(int)
+        
+        # sort by date
+        sumdf2.sort_values(by=["最近发文日期"], ascending=False, inplace=True)
+        # reset index
+        sumdf2.reset_index(drop=True, inplace=True)
+    else:
+        # 如果没有有效日期记录，至少显示总数
+        sumdf2 = oldsum2.groupby("区域").size().reset_index(name="总记录数")
+        sumdf2["最近发文日期"] = None
+        sumdf2["最早发文日期"] = None
+        sumdf2["案例总数"] = 0
+    
     # display
     st.markdown("#### 按区域统计")
     st.table(sumdf2)
@@ -270,8 +328,8 @@ def get_pbocsum(orgname):
     if len(pendf) > 0:
         # copy df
         pendf = pendf.copy()
-        # pendf["发布日期"] = pd.to_datetime(pendf["date"]).dt.date
-        pendf.loc[:, "发布日期"] = pd.to_datetime(pendf["date"]).dt.date
+        # normalize date column to pandas datetime, avoid .dt.date to keep dtype consistent
+        pendf.loc[:, "发布日期"] = pd.to_datetime(pendf["date"], errors="coerce")
     return pendf
 
 
@@ -284,27 +342,53 @@ def get_pbocdetail(orgname):
     # beginwith = "pbocdtl" + org_name_index
     beginwith = "pbocdtl"
     d0 = get_csvdf(penpboc, beginwith)
+
+    # 从pbocsum中获取发布日期和区域信息
+    if orgname == "":
+        # 获取所有区域的pbocsum数据
+        all_sum_list = []
+        for org in org2name.keys():
+            org_sum = get_pbocsum(org)
+            if not org_sum.empty:
+                all_sum_list.append(org_sum)
+        
+        if all_sum_list:
+            sumdf = pd.concat(all_sum_list, ignore_index=True)
+        else:
+            sumdf = pd.DataFrame()
+    else:
+        # 获取指定区域的pbocsum数据
+        sumdf = get_pbocsum(orgname)
+    
+    # 通过link字段关联pbocsum，从pbocsum中获取发布日期和区域
+    if not sumdf.empty and not d0.empty and 'link' in d0.columns and 'link' in sumdf.columns:
+        # 使用left join保留所有pbocdtl记录，同时获取发布日期和区域
+        d0 = pd.merge(d0, sumdf[['link', '发布日期', '区域']], 
+                     left_on='link', right_on='link', how='left', suffixes=('_dtl', '_sum'))
+        
+        # 优先使用pbocsum的发布日期，如果没有则使用pbocdtl的date
+        if '发布日期_sum' in d0.columns:
+            d0['发布日期'] = d0['发布日期_sum'].fillna(
+                pd.to_datetime(d0['date'], errors='coerce'))
+            # 清理多余列
+            d0 = d0.drop(['发布日期_dtl', '发布日期_sum'], axis=1, errors='ignore')
+        else:
+            d0["发布日期"] = pd.to_datetime(d0["date"], errors="coerce")
+        
+        # 优先使用pbocsum的区域，如果没有则使用pbocdtl的区域
+        if '区域_sum' in d0.columns:
+            d0['区域'] = d0['区域_sum'].fillna(d0['区域_dtl'])
+            # 清理多余列
+            d0 = d0.drop(['区域_dtl', '区域_sum'], axis=1, errors='ignore')
+    else:
+        # 如果无法关联，至少确保有发布日期列
+        if len(d0) > 0:
+            d0["发布日期"] = pd.to_datetime(d0["date"], errors="coerce")
+    
+    # 在关联后再过滤指定区域的数据
     if orgname != "":
         d0 = d0[d0["区域"] == orgname]
-    # reset index
-    # d1 = d0[["title", "subtitle", "date", "doc", "id"]].reset_index(drop=True)
-    # format date
-    # d1["date"] = pd.to_datetime(d1["date"]).dt.date
-    # update column name
-    # d1.columns = ["标题", "文号", "发布日期", "内容", "id"]
-    # if not empty
-    if len(d0) > 0:
-        # format date
-        d0["发布日期"] = pd.to_datetime(d0["date"]).dt.date
-        # fillna
-        # d0["序号"] = d0["序号"].fillna(1)
-        # fix index data type
-        # d0["序号"] = d0["序号"].astype(float).astype(int)
-    # if orgname != "":
-    #     st.write(orgname)
-    #     d0["区域"] = orgname
-    # fillna
-    # d0.fillna("", inplace=True)
+    
     return d0
 
 
@@ -315,8 +399,14 @@ def display_suminfo(df):
         # get unique link number
         linkno = df["link"].nunique()
         # get min and max date of old eventdf
-        min_date = df["发布日期"].min()
-        max_date = df["发布日期"].max()
+        dates = pd.to_datetime(df["发布日期"], errors="coerce").dropna()
+        if not dates.empty:
+            min_date = dates.min()
+            max_date = dates.max()
+        else:
+            today = pd.Timestamp.today().normalize()
+            min_date = today - pd.Timedelta(days=365)
+            max_date = today
         # use metric for length and date
         col1, col2, col3 = st.columns([1, 1, 1])
         # col1.metric("案例总数", oldlen)
@@ -334,7 +424,7 @@ def display_pbocsum(org_name_ls):
         display_suminfo(oldsum)
         st.markdown("详情")
         dtl = get_pbocdetail(org_name)
-        # dtl1 = dtl.drop_duplicates(subset=["name", "date", "link"])
+        # dtl现在已经包含了从pbocsum关联的发布日期和区域信息
         display_suminfo(dtl)
 
 
@@ -886,8 +976,11 @@ def download_pbocsum():
         lensum = len(oldsum)
         st.write("列表数据量: " + str(lensum))
         # get min and max date
-        mindate = oldsum["date"].min()
-        maxdate = oldsum["date"].max()
+        if not oldsum.empty and "发布日期" in oldsum.columns:
+            mindate = oldsum["发布日期"].min().strftime("%Y-%m-%d") if oldsum["发布日期"].notna().any() else "N/A"
+            maxdate = oldsum["发布日期"].max().strftime("%Y-%m-%d") if oldsum["发布日期"].notna().any() else "N/A"
+        else:
+            mindate = maxdate = "N/A"
         st.write("列表日期: " + maxdate + " - " + mindate)
 
         # beginwith = "pbocdtl" + org_name_index
@@ -897,8 +990,11 @@ def download_pbocsum():
         lendtl = len(dtl)
         st.write("详情数据量: " + str(lendtl))
         # get min and max date
-        mindate = dtl["date"].min()
-        maxdate = dtl["date"].max()
+        if not dtl.empty and "发布日期" in dtl.columns:
+            mindate = dtl["发布日期"].min().strftime("%Y-%m-%d") if dtl["发布日期"].notna().any() else "N/A"
+            maxdate = dtl["发布日期"].max().strftime("%Y-%m-%d") if dtl["发布日期"].notna().any() else "N/A"
+        else:
+            mindate = maxdate = "N/A"
         st.write("详情日期: " + maxdate + " - " + mindate)
 
         # listname
@@ -1404,9 +1500,9 @@ def clean_string(x):
 # display bar chart in plotly
 def display_search_df(searchdf):
     df_month = searchdf.copy()
-    # df_month["发文日期"] = pd.to_datetime(df_month["发布日期"]).dt.date
-    # count by month
-    df_month["month"] = df_month["发布日期"].apply(lambda x: x.strftime("%Y-%m"))
+    # normalize date dtype and count by month
+    df_month["发布日期"] = pd.to_datetime(df_month["发布日期"], errors="coerce")
+    df_month["month"] = df_month["发布日期"].dt.strftime("%Y-%m")
     df_month_count = df_month.groupby(["month"]).size().reset_index(name="count")
     # count by month
     # fig = go.Figure(
@@ -1834,9 +1930,9 @@ def sum_amount_by_month(df):
     # )
     df1 = df
     df1["amount"] = df1["amount"].fillna(0)
-    df1["发布日期"] = pd.to_datetime(df1["发布日期"]).dt.date
+    df1["发布日期"] = pd.to_datetime(df1["发布日期"], errors="coerce")
     # df=df[df['发文日期']>=pd.to_datetime('2020-01-01')]
-    df1["month"] = df1["发布日期"].apply(lambda x: x.strftime("%Y-%m"))
+    df1["month"] = df1["发布日期"].dt.strftime("%Y-%m")
     df_month_sum = df1.groupby(["month"])["amount"].sum().reset_index(name="sum")
     df_sigle_penalty = df1[["month", "amount"]]
     return df_month_sum, df_sigle_penalty
