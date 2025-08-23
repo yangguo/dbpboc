@@ -21,6 +21,7 @@ import subprocess
 import shutil
 from pathlib import Path
 from app.core.config import settings
+import uuid
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -362,6 +363,115 @@ class DownloadStatus(BaseModel):
     current_file: Optional[str] = None
     overall_progress: int = 0
     files: List[DownloadProgress] = []
+
+
+class SaveExtractedDataRequest(BaseModel):
+    """Payload for saving extracted structured data from the UI."""
+    data: List[dict]
+    timestamp: Optional[str] = None
+
+
+@router.post("/save-extracted-data/{org_name}")
+async def save_extracted_data(org_name: str, payload: SaveExtractedDataRequest):
+    """Save extracted structured penalty data for an organization.
+
+    Accepts a JSON body with `data` (list of dict rows) and optional `timestamp`.
+    Persists to a CSV under the temp folder for the given organization, using the
+    same naming convention as other saved tables (pboctotable...).
+    """
+    if org_name not in org2name:
+        raise HTTPException(status_code=400, detail="Invalid organization name")
+
+    org_name_index = org2name[org_name]
+
+    try:
+        # Validate and normalize data
+        rows = payload.data or []
+
+        # Build two datasets: pbocdtl (detail) and pboccat (categorization)
+        detail_records: List[Dict[str, Any]] = []
+        cat_records: List[Dict[str, Any]] = []
+
+        def norm_date(s: str) -> str:
+            if not s:
+                return ""
+            try:
+                # Use pandas to parse various date formats including Chinese formats
+                dt = pd.to_datetime(str(s), errors='coerce')
+                if pd.isna(dt):
+                    return ""
+                # If it's a Timestamp with tz, convert to naive date
+                return dt.strftime('%Y-%m-%d')
+            except Exception:
+                return ""
+
+        for r in rows:
+            uid = str(uuid.uuid4())
+            link = r.get('link', '')
+            detail = {
+                "企业名称": r.get("被处罚当事人", ""),
+                "处罚决定书文号": r.get("行政处罚决定书文号", ""),
+                "违法行为类型": r.get("主要违法违规事实", ""),
+                "行政处罚依据": r.get("行政处罚依据", ""),
+                "行政处罚内容": r.get("行政处罚决定", ""),
+                "作出行政处罚决定机关名称": r.get("作出处罚决定的机关名称", ""),
+                "作出行政处罚决定日期": r.get("作出处罚决定的日期", ""),
+                "link": link,
+                "uid": uid,
+                "date": norm_date(r.get("作出处罚决定的日期", "")),
+            }
+            detail_records.append(detail)
+
+            cat = {
+                "amount": r.get("罚没总金额", ""),
+                "category": r.get("违规类型", ""),
+                "province": r.get("监管地区", ""),
+                "industry": r.get("行业", ""),
+                "id": link,
+                "uid": uid,
+            }
+            cat_records.append(cat)
+
+        df_detail = pd.DataFrame(detail_records)
+        df_cat = pd.DataFrame(cat_records)
+
+        # Determine filename
+        ts = payload.timestamp
+        if ts:
+            # Sanitize incoming timestamp: keep digits only and ensure 14 chars (YYYYMMDDHHMMSS)
+            ts_digits = ''.join(ch for ch in ts if ch.isdigit())
+            if len(ts_digits) >= 14:
+                ts = ts_digits[:14]
+            else:
+                ts = datetime.now().strftime("%Y%m%d%H%M%S")
+        else:
+            ts = datetime.now().strftime("%Y%m%d%H%M%S")
+        # Save as pboc detail dataset under ../pboc
+        filename_dtl = f"pbocdtl{org_name_index}{ts}"
+        filename_cat = f"pboccat{org_name_index}{ts}"
+
+        # Ensure folder exists and save CSV in PBOC data path (no subfolder)
+        os.makedirs(PBOC_DATA_PATH, exist_ok=True)
+        filepath_dtl = os.path.join(PBOC_DATA_PATH, f"{filename_dtl}.csv")
+        filepath_cat = os.path.join(PBOC_DATA_PATH, f"{filename_cat}.csv")
+
+        # Align with savedf behavior (no special quoting) for pboc dataset
+        df_detail.to_csv(filepath_dtl)
+        df_cat.to_csv(filepath_cat)
+
+        logger.info(f"Saved extracted data to {filepath_dtl} and {filepath_cat}")
+        return {
+            "message": "Extracted data saved successfully",
+            "filename": filename_dtl,
+            "detail_filename": filename_dtl,
+            "detail_filepath": filepath_dtl,
+            "cat_filename": filename_cat,
+            "cat_filepath": filepath_cat,
+            "total_records": len(rows),
+        }
+    except Exception as e:
+        logger.error(f"Error saving extracted data for {org_name}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save extracted data")
 
 # Global download status storage
 download_sessions: Dict[str, DownloadStatus] = {}

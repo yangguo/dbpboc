@@ -48,6 +48,7 @@ interface ExtractedInfo {
   罚没总金额?: string;
   违规类型?: string;
   监管地区?: string;
+  link?: string;
 }
 
 const defaultColumns = [
@@ -71,6 +72,7 @@ export default function AttachmentProcessPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [extractedResults, setExtractedResults] = useState<ExtractedInfo[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
   useEffect(() => {
     if (selectedOrg) {
@@ -187,10 +189,11 @@ export default function AttachmentProcessPage() {
         return '';
       };
 
-      const normalizeRow = (raw: any, id: string): ExtractedInfo => {
+      const normalizeRow = (raw: any, id: string, originalRecord?: any): ExtractedInfo => {
          // 调试：输出原始数据的所有字段
          console.log('原始数据字段:', Object.keys(raw));
          console.log('原始数据内容:', raw);
+         console.log('原始记录数据:', originalRecord);
          
          const result = {
         id,
@@ -205,10 +208,13 @@ export default function AttachmentProcessPage() {
         行业: pick(raw, '行业'),
         罚没总金额: pick(raw, '罚没总金额'),
         违规类型: pick(raw, '违规类型'),
-        监管地区: pick(raw, '监管地区')
+        监管地区: pick(raw, '监管地区'),
+        // 从原始pboctotable记录中获取link字段
+        link: originalRecord ? pick(originalRecord, 'link') : pick(raw, 'link')
       };
       
       console.log('规范化后的行政处罚决定书文号:', result.行政处罚决定书文号);
+      console.log('从pboctotable获取的link:', result.link);
       return result;
       };
       for (const recordId of selectedRecords) {
@@ -223,18 +229,18 @@ export default function AttachmentProcessPage() {
               // 如果data直接是数组
               extractResult.data.forEach((item: any, index: number) => {
                 console.log('处理数组项:', item);
-                results.push(normalizeRow(item, `${recordId}-${index}`));
+                results.push(normalizeRow(item, `${recordId}-${index}`, record));
               });
             } else if (extractResult.data.items && Array.isArray(extractResult.data.items)) {
               // 如果有items数组
               extractResult.data.items.forEach((item: any, index: number) => {
                 console.log('处理items项:', item);
-                results.push(normalizeRow(item, `${recordId}-${index}`));
+                results.push(normalizeRow(item, `${recordId}-${index}`, record));
               });
             } else {
               // 单个对象格式
               console.log('处理单个对象:', extractResult.data);
-              results.push(normalizeRow(extractResult.data, recordId));
+              results.push(normalizeRow(extractResult.data, recordId, record));
             }
           }
         }
@@ -255,7 +261,8 @@ export default function AttachmentProcessPage() {
       }
     } catch (error) {
       console.error('Processing failed:', error);
-      alert('处理过程中发生错误，请重试');
+      setToast({message: '处理过程中发生错误，请重试', type: 'error'});
+      setTimeout(() => setToast(null), 3000);
     } finally {
       setIsProcessing(false);
     }
@@ -263,7 +270,8 @@ export default function AttachmentProcessPage() {
 
   const handleSaveResults = async () => {
     if (extractedResults.length === 0) {
-      alert('没有可保存的结果');
+      setToast({message: '没有可保存的结果', type: 'error'});
+      setTimeout(() => setToast(null), 3000);
       return;
     }
 
@@ -285,10 +293,12 @@ export default function AttachmentProcessPage() {
       }
 
       const result = await response.json();
-      alert(`结果已成功保存: ${result.filename || '已保存'}`);
+      setToast({message: `结果已成功保存: ${result.filename || '已保存'}`, type: 'success'});
+      setTimeout(() => setToast(null), 3000);
     } catch (error) {
       console.error('Error saving results:', error);
-      alert('保存结果时出错，请重试');
+      setToast({message: '保存结果时出错，请重试', type: 'error'});
+      setTimeout(() => setToast(null), 3000);
     } finally {
       setIsSaving(false);
     }
@@ -303,7 +313,7 @@ export default function AttachmentProcessPage() {
     const headers = [
       '记录ID', '行政处罚决定书文号', '被处罚当事人', '主要违法违规事实', '行政处罚依据',
       '行政处罚决定', '作出处罚决定的机关名称', '作出处罚决定的日期', '行业',
-      '罚没总金额', '违规类型', '监管地区'
+      '罚没总金额', '违规类型', '监管地区', 'link'
     ];
 
     const csvContent = [
@@ -320,7 +330,8 @@ export default function AttachmentProcessPage() {
         `"${((result['行业'] || '') as string).replace(/"/g, '""')}"`,
         (result['罚没总金额'] || '0') as string,
         `"${((result['违规类型'] || '') as string).replace(/"/g, '""')}"`,
-        `"${((result['监管地区'] || '') as string).replace(/"/g, '""')}"`
+        `"${((result['监管地区'] || '') as string).replace(/"/g, '""')}"`,
+        `"${((result.link || '') as string).replace(/"/g, '""')}"`
       ].join(','))
     ].join('\n');
 
@@ -581,6 +592,7 @@ export default function AttachmentProcessPage() {
                         <TableHead className="w-[140px] text-right">罚没总金额</TableHead>
                         <TableHead className="w-[180px] text-center">违规类型</TableHead>
                         <TableHead className="w-[120px] text-center">监管地区</TableHead>
+                        <TableHead className="w-[200px] text-center">链接</TableHead>
                       </TableRow>
                     </TableHeader>
                   <TableBody>
@@ -654,6 +666,23 @@ export default function AttachmentProcessPage() {
                             {result['监管地区'] || '-'}
                           </div>
                         </TableCell>
+                        <TableCell className="w-[200px] text-center">
+                          <div className="break-words leading-relaxed">
+                            {result.link ? (
+                              <a 
+                                href={result.link} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-800 underline"
+                                title={result.link}
+                              >
+                                查看原文
+                              </a>
+                            ) : (
+                              '-'
+                            )}
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -664,6 +693,22 @@ export default function AttachmentProcessPage() {
           </Card>
         )}
        </div>
+       
+       {/* Toast 通知 */}
+       {toast && (
+         <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm ${
+           toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+         }`}>
+           <div className="flex items-center gap-2">
+             {toast.type === 'success' ? (
+               <CheckSquare className="h-5 w-5" />
+             ) : (
+               <AlertCircle className="h-5 w-5" />
+             )}
+             <span>{toast.message}</span>
+           </div>
+         </div>
+       )}
      </MainLayout>
    );
  }
