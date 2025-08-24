@@ -291,6 +291,23 @@ async def get_processed_data(org_name: str) -> List[ProcessedDataItem]:
         if df.empty:
             return []
         
+        # Get existing links from all pboccat files to exclude them
+        existing_links = set()
+        try:
+            pboccat_df = get_csvdf(PBOC_DATA_PATH, "pboccat")
+            if not pboccat_df.empty and 'id' in pboccat_df.columns:
+                existing_links = set(pboccat_df['id'].dropna().tolist())
+                logger.info(f"Found {len(existing_links)} existing links in pboccat files")
+        except Exception as e:
+            logger.warning(f"Error reading pboccat files: {e}")
+        
+        # Filter out rows with links that already exist in pboccat files
+        if existing_links and 'link' in df.columns:
+            original_count = len(df)
+            df = df[~df['link'].isin(existing_links)]
+            filtered_count = len(df)
+            logger.info(f"Filtered processed data: {original_count} -> {filtered_count} (excluded {original_count - filtered_count} existing links)")
+        
         processed_data = []
         for idx, row in df.iterrows():
             data_item = ProcessedDataItem(

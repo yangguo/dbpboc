@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_VISION_MODEL: str = "gpt-4-vision-preview"
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    # LLM Request Tunables
+    OPENAI_TIMEOUT_SECONDS: int = 480  # Min request timeout for long contexts
+    OPENAI_MAX_RETRIES: int = 5        # Retry attempts for transient connection issues
     
     class Config:
         env_file = ".env"

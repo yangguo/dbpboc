@@ -253,25 +253,29 @@ def extract_penalty_info(text: str, source_link: Optional[str] = None, run_id: O
              api_key=settings.OPENAI_API_KEY,
              base_url=getattr(settings, 'OPENAI_BASE_URL', None)
          )
-         
-         # Add retry logic with exponential backoff 
-         import time 
-         max_retries = 3 
-         base_delay = 2 
-         
+
+         # Add retry logic with exponential backoff
+         import time
+         max_retries = max(1, int(getattr(settings, 'OPENAI_MAX_RETRIES', 5)))
+         base_delay = 2
+
          # 根据文本长度动态调整超时时间 
          text_length = len(text) 
-         if text_length > 5000: 
-             timeout_seconds = 360.0  # 6分钟用于超长文本 
-             max_tokens = 10000 
-         elif text_length > 2000: 
-             timeout_seconds = 300.0  # 5分钟用于长文本 
-             max_tokens = 10000 
-         else: 
-             timeout_seconds = 180.0  # 3分钟用于普通文本 
-             max_tokens = 10000 
+         if text_length > 5000:
+             timeout_seconds = 360.0  # 6分钟用于超长文本
+             max_tokens = 10000
+         elif text_length > 2000:
+             timeout_seconds = 300.0  # 5分钟用于长文本
+             max_tokens = 10000
+         else:
+             timeout_seconds = 180.0  # 3分钟用于普通文本
+             max_tokens = 10000
+         # Ensure a minimum timeout from config for long contexts
+         cfg_timeout = float(getattr(settings, 'OPENAI_TIMEOUT_SECONDS', 480))
+         if timeout_seconds < cfg_timeout:
+             timeout_seconds = cfg_timeout
          
-         print(f"处理文本长度: {text_length}字符, 设置超时: {timeout_seconds}秒, 最大tokens: {max_tokens}") 
+         print(f"处理文本长度: {text_length}字符, 设置超时: {timeout_seconds}秒, 最大tokens: {max_tokens}")
          
          for attempt in range(max_retries): 
              try: 
@@ -286,12 +290,13 @@ def extract_penalty_info(text: str, source_link: Optional[str] = None, run_id: O
                      timeout=timeout_seconds 
                  ) 
                  break  # Success, exit retry loop 
-             except (openai.APITimeoutError, openai.APIConnectionError) as e: 
-                 if attempt == max_retries - 1:  # Last attempt 
-                     raise e 
-                 delay = base_delay * (2 ** attempt)  # Exponential backoff 
-                 print(f"API调用失败 (尝试 {attempt + 1}/{max_retries}), {delay}秒后重试: {str(e)}") 
-                 time.sleep(delay) 
+             except (openai.APITimeoutError, openai.APIConnectionError) as e:
+                # For connection/timeout issues, backoff and retry with same full context
+                if attempt == max_retries - 1:  # Last attempt
+                    raise e
+                delay = min(60, base_delay * (2 ** attempt))  # Exponential backoff with cap
+                print(f"API调用失败 (尝试 {attempt + 1}/{max_retries}), {delay}秒后重试: {str(e)}")
+                time.sleep(delay)
          
          # 解析响应 
          result_text = response.choices[0].message.content.strip() 
