@@ -124,7 +124,7 @@ export default function AttachmentProcessPage() {
     }
   };
 
-  const extractPenaltyInfo = async (text: string, link?: string): Promise<any> => {
+  const extractPenaltyInfo = async (text: string, link?: string, runId?: string, reset?: boolean): Promise<any> => {
     try {
       const response = await fetch(`${config.backendUrl}/api/v1/cases/extract`, {
         method: 'POST',
@@ -134,7 +134,9 @@ export default function AttachmentProcessPage() {
         body: JSON.stringify({
           prompt: '', // 后端已有完整的提示词逻辑
           text: text,
-          link: link || null
+          link: link || null,
+          runId: runId || null,
+          reset: !!reset
         })
       });
       
@@ -176,6 +178,8 @@ export default function AttachmentProcessPage() {
     }
     
     setIsProcessing(true);
+    // 生成一次运行的ID，用于后端快照分隔
+    const currentRunId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const results: ExtractedInfo[] = [];
     
     try {
@@ -218,11 +222,13 @@ export default function AttachmentProcessPage() {
       console.log('从pboctotable获取的link:', result.link);
       return result;
       };
+      let i = 0;
       for (const recordId of selectedRecords) {
         const record = processedData.find(r => r.id === recordId);
         if (record && record.content) {
-          const extractResult = await extractPenaltyInfo(record.content, record.link);
+          const extractResult = await extractPenaltyInfo(record.content, record.link, currentRunId, i === 0);
           console.log('原始提取结果:', extractResult);
+          i++;
           
           // 处理新的数据结构：data.items 是数组
           if (extractResult.success && extractResult.data) {

@@ -37,13 +37,15 @@ class LLMExtractRequest(BaseModel):
     prompt: str = ""  # 可选参数，后端有内置提示词逻辑
     text: str
     link: Optional[str] = None  # 可选：来源链接
+    runId: Optional[str] = None  # 可选：一次运行的ID，用于快照分隔
+    reset: Optional[bool] = False  # 可选：是否重置快照累积（新一轮运行）
 
 class LLMExtractResponse(BaseModel):
     success: bool
     data: Dict[str, Any]
     message: str = ""
 
-def extract_penalty_info(text: str, source_link: Optional[str] = None): 
+def extract_penalty_info(text: str, source_link: Optional[str] = None, run_id: Optional[str] = None, reset: bool = False): 
      """使用LLM提取行政处罚决定书关键信息""" 
      try: 
          logger.info(f"[llm-extract] extract_penalty_info called with source_link: {source_link}")
@@ -51,30 +53,27 @@ def extract_penalty_info(text: str, source_link: Optional[str] = None):
          batch_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
          # 内部工具：保存“当前全部结果”到 temp/extract 子目录（单文件，减少文件数量）
+         def _prepare_extract_df(items: List[Dict[str, Any]]) -> pd.DataFrame:
+             df = pd.DataFrame(items)
+             # 仅保留标准化字段，避免重复列；保证包含 link 列
+             preferred_cols = [
+                 "link",
+                 "记录ID", "决定书文号", "被处罚当事人", "违法事实",
+                 "处罚依据", "处罚决定", "处罚机关", "决定日期",
+                 "行业", "罚没金额", "违规类型", "监管地区",
+             ]
+             cols_to_keep = [c for c in preferred_cols if c in df.columns]
+             # 如果 link 不在列中，也加入一个空列，保证列存在
+             if "link" not in df.columns:
+                 df["link"] = ""
+                 cols_to_keep = ["link"] + cols_to_keep
+             return df.loc[:, cols_to_keep]
+
          def save_extract_full(items: List[Dict[str, Any]], prefix: str = "llm_extract") -> None:
              try:
                  if not items:
                      return
-                 df = pd.DataFrame(items)
-                 logger.info(f"[llm-extract] save_extract_full called with {len(items)} items, link column exists: {'link' in df.columns}")
-                 if 'link' in df.columns:
-                     non_empty_links = df['link'].notna().sum()
-                     logger.info(f"[llm-extract] link column statistics: {non_empty_links} non-empty out of {len(df)} total")
-                     logger.info(f"[llm-extract] sample link values: {df['link'].head(3).tolist()}")
-                 
-                 # 仅保留标准化字段，避免重复列；保证包含 link 列
-                 preferred_cols = [
-                     "link",
-                     "记录ID", "决定书文号", "被处罚当事人", "违法事实",
-                     "处罚依据", "处罚决定", "处罚机关", "决定日期",
-                     "行业", "罚没金额", "违规类型", "监管地区",
-                 ]
-                 cols_to_keep = [c for c in preferred_cols if c in df.columns]
-                 # 如果 link 不在列中，也加入一个空列，保证列存在
-                 if "link" not in df.columns:
-                     df["link"] = ""
-                     cols_to_keep = ["link"] + cols_to_keep
-                 df = df.loc[:, cols_to_keep]
+                 df = _prepare_extract_df(items)
 
                  basename = f"{prefix}_{batch_timestamp}_total{len(items)}"
                  savetempsub(df, basename, "extract")
@@ -84,18 +83,59 @@ def extract_penalty_info(text: str, source_link: Optional[str] = None):
              except Exception as e:
                  logger.info(f"[llm-extract] temp_save_error err={e}")
 
-         # 内部工具：累计并按“每5次请求”保存一次全部结果
-         def maybe_accumulate_and_save(items: List[Dict[str, Any]]):
+         # 内部工具：每次请求都保存一个固定文件（便于持续查看最新结果）
+         def save_extract_latest(items: List[Dict[str, Any]]) -> None:
              try:
-                 global acc_extract_request_count, acc_extract_items
+                 if not items:
+                     return
+                 df = _prepare_extract_df(items)
+                 basename = "llm_extract_latest"
+                 savetempsub(df, basename, "extract")
+                 logger.info(f"[llm-extract] TEMP_SAVE_LATEST count={len(items)} file={basename}.csv")
+             except Exception as e:
+                 logger.info(f"[llm-extract] temp_save_latest_error err={e}")
+
+         # 内部工具：累计并按“每5次请求”保存一次全部结果（跨进程/重载安全，落盘 state）
+         def maybe_accumulate_and_save(items: List[Dict[str, Any]], run_id_param: Optional[str], reset_param: bool):
+             try:
+                 state_dir = os.path.join(TEMP_PATH, 'extract')
+                 os.makedirs(state_dir, exist_ok=True)
+                 state_path = os.path.join(state_dir, 'llm_extract_state.json')
+
+                 def load_state():
+                     try:
+                         with open(state_path, 'r', encoding='utf-8') as f:
+                             return json.load(f)
+                     except Exception:
+                         return {"count": 0, "items": []}
+
+                 def write_state(state):
+                     try:
+                         with open(state_path, 'w', encoding='utf-8') as f:
+                             json.dump(state, f, ensure_ascii=False)
+                     except Exception as e:
+                         logger.info(f"[llm-extract] write_state_error err={e}")
+
                  with acc_extract_lock:
-                     acc_extract_request_count += 1
+                     state = load_state()
+                     # 如果显式重置，或 runId 变更，则清空状态（开始新一轮）
+                     incoming_run = run_id_param or ""
+                     if reset_param or (incoming_run and state.get("runId", "") != incoming_run):
+                         state = {"count": 0, "items": [], "runId": incoming_run}
+
+                     state["count"] = int(state.get("count", 0)) + 1
                      if items:
-                         acc_extract_items.extend(items)
-                     if acc_extract_request_count % 5 == 0 and acc_extract_items:
-                         save_extract_full(acc_extract_items)
+                         # 追加当前结果到累计items
+                         state_items = state.get("items", [])
+                         state_items.extend(items)
+                         state["items"] = state_items
+                     # 保存本次状态
+                     write_state(state)
+
+                     if state["count"] % 5 == 0 and state.get("items"):
+                         save_extract_full(state["items"])  # 保存累计快照
                          logger.info(
-                             f"[llm-extract] BATCH_SAVE request_count={acc_extract_request_count} total_items={len(acc_extract_items)}"
+                             f"[llm-extract] BATCH_SAVE request_count={state['count']} total_items={len(state['items'])}"
                          )
              except Exception as e:
                  logger.info(f"[llm-extract] accumulate_error err={e}")
@@ -286,8 +326,9 @@ def extract_penalty_info(text: str, source_link: Optional[str] = None):
             
             normalized = [normalize_item(item, i) for i, item in enumerate(result)]
             attach_link(normalized)
-            # 累计请求并在每5次请求时保存一次全部结果
-            maybe_accumulate_and_save(normalized)
+            # 始终更新最新文件；并在每5次请求时保存累计快照
+            save_extract_latest(normalized)
+            maybe_accumulate_and_save(normalized, run_id, reset)
 
             return {
                 "success": True,
@@ -308,8 +349,9 @@ def extract_penalty_info(text: str, source_link: Optional[str] = None):
                          # 标准化字段，确保前端列名一致
                          normalized = [normalize_item(item, i) for i, item in enumerate(result)]
                          attach_link(normalized)
-                         # 累计请求并在每5次请求时保存一次全部结果
-                         maybe_accumulate_and_save(normalized)
+                         # 始终更新最新文件；并在每5次请求时保存累计快照
+                         save_extract_latest(normalized)
+                         maybe_accumulate_and_save(normalized, run_id, reset)
                          return { 
                              "success": True, 
                              "data": {"items": normalized} 
@@ -351,8 +393,9 @@ def extract_penalty_info(text: str, source_link: Optional[str] = None):
                      result = [result] 
                  normalized = [normalize_item(item, i) for i, item in enumerate(result)]
                  attach_link(normalized)
-                 # 累计请求并在每5次请求时保存一次全部结果
-                 maybe_accumulate_and_save(normalized)
+                 # 始终更新最新文件；并在每5次请求时保存累计快照
+                 save_extract_latest(normalized)
+                 maybe_accumulate_and_save(normalized, run_id, reset)
                  return { 
                      "success": True, 
                      "data": {"items": normalized} 
@@ -2082,7 +2125,7 @@ async def extract_penalty_info_endpoint(request: LLMExtractRequest):
             acc_extract_request_count = 0
         
         # 调用提取函数
-        result = extract_penalty_info(request.text, request.link)
+        result = extract_penalty_info(request.text, request.link, request.runId, bool(request.reset))
         
         if result["success"]:
             return LLMExtractResponse(
