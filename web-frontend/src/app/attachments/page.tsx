@@ -946,7 +946,7 @@ export default function AttachmentsPage() {
                             onCheckedChange={(checked) => handleSelectAll(checked as boolean)}
                           />
                         </TableHead>
-                        <TableHead>索引</TableHead>
+                        <TableHead>序号</TableHead>
                         <TableHead>文件名</TableHead>
                         <TableHead>下载链接</TableHead>
                         <TableHead>文件大小</TableHead>
@@ -964,7 +964,7 @@ export default function AttachmentsPage() {
                               onCheckedChange={(checked) => handleSelectAttachment(attachment.id, checked as boolean)}
                             />
                           </TableCell>
-                          <TableCell>{index}</TableCell>
+                          <TableCell>{index + 1}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
                               {getStatusIcon(attachment.status)}

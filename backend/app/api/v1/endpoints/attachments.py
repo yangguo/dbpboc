@@ -309,10 +309,13 @@ async def get_processed_data(org_name: str) -> List[ProcessedDataItem]:
             logger.info(f"Filtered processed data: {original_count} -> {filtered_count} (excluded {original_count - filtered_count} existing links)")
         
         processed_data = []
-        for idx, row in df.iterrows():
+        for idx, (_, row) in enumerate(df.iterrows(), 1):
+            row_dict = row.to_dict()
+            # 添加序号字段
+            row_dict['序号'] = idx
             data_item = ProcessedDataItem(
                 id=str(idx),
-                data=row.to_dict()
+                data=row_dict
             )
             processed_data.append(data_item)
         

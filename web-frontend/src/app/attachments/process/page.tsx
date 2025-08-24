@@ -17,7 +17,7 @@ import {
   Square,
   Download
 } from "lucide-react";
-import { Tooltip } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // City list for organization selection
 const cityList = [
@@ -353,7 +353,7 @@ export default function AttachmentProcessPage() {
     document.body.removeChild(link);
   };
 
-  const columns = processedData.length > 0 ? Object.keys(processedData[0]).filter(key => key !== 'id' && (key === 'link' || key === 'content')) : [];
+  const columns = processedData.length > 0 ? ['序号', ...Object.keys(processedData[0]).filter(key => key !== 'id' && (key === 'link' || key === 'content'))] : ['序号'];
 
   return (
     <MainLayout>
@@ -480,9 +480,10 @@ export default function AttachmentProcessPage() {
                           <TableHead 
                             key={col} 
                             className={`
+                              ${col === '序号' ? 'w-16 text-center' : ''}
                               ${col === 'link' ? 'min-w-48' : ''}
-                              ${col === 'content' ? 'w-80' : ''}
-                              ${col !== 'link' && col !== 'content' ? 'min-w-32' : ''}
+                              ${col === 'content' ? 'w-64 max-w-xs' : ''}
+                              ${col !== 'link' && col !== 'content' && col !== '序号' ? 'min-w-32' : ''}
                             `}
                           >
                             {col}
@@ -510,7 +511,11 @@ export default function AttachmentProcessPage() {
                           {columns.map((col) => (
                             <TableCell key={col}>
                               <div className="cursor-default p-1 rounded min-h-8 flex items-center">
-                                {col === 'link' ? (
+                                {col === '序号' ? (
+                                  <span className="w-full text-center font-medium flex justify-center">
+                                    {rowIndex + 1}
+                                  </span>
+                                ) : col === 'link' ? (
                                   <a 
                                     href={String(row[col] || '')} 
                                     target="_blank" 
@@ -520,15 +525,18 @@ export default function AttachmentProcessPage() {
                                     {String(row[col] || '')}
                                   </a>
                                 ) : col === 'content' ? (
-                                  <Tooltip 
-                                    content={String(row[col] || '')}
-                                    maxWidth="max-w-lg"
-                                    position="top"
-                                  >
-                                    <span className="truncate cursor-help">
-                                      {String(row[col] || '')}
-                                    </span>
-                                  </Tooltip>
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="block truncate cursor-help max-w-xs text-sm leading-relaxed">
+                                          {String(row[col] || '')}
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="max-w-6xl max-h-screen overflow-y-auto whitespace-normal break-words leading-relaxed min-w-80">
+                                        <p>{String(row[col] || '')}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
                                 ) : (
                                   <span className="truncate max-w-xs">
                                     {String(row[col] || '')}
@@ -589,7 +597,7 @@ export default function AttachmentProcessPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[80px] text-center">记录ID</TableHead>
+                        <TableHead className="w-[80px] text-center">序号</TableHead>
                         <TableHead className="w-[180px]">行政处罚决定书文号</TableHead>
                         <TableHead className="w-[160px]">被处罚当事人</TableHead>
                         <TableHead className="w-[320px]">主要违法违规事实</TableHead>
@@ -608,7 +616,7 @@ export default function AttachmentProcessPage() {
                     {extractedResults.map((result, index) => (
                       <TableRow key={`result-${result.id || `idx-${index}`}`} className="hover:bg-muted/50">
                         <TableCell className="text-center font-medium whitespace-nowrap">
-                          {result.id}
+                          {index + 1}
                         </TableCell>
                         <TableCell className="w-[180px]">
                            <div className="break-words leading-relaxed" title={(result['决定书文号'] || result['行政处罚决定书文号']) as string}>
