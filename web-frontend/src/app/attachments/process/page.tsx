@@ -73,26 +73,68 @@ export default function AttachmentProcessPage() {
   const [extractedResults, setExtractedResults] = useState<ExtractedInfo[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const [isLoadingRef, setIsLoadingRef] = useState(false);
 
   useEffect(() => {
-    if (selectedOrg) {
+    if (selectedOrg && !isLoadingRef) {
       loadProcessedData();
     }
   }, [selectedOrg]);
 
   const loadProcessedData = async () => {
+    if (isLoadingRef) {
+      console.log('loadProcessedData already in progress, skipping');
+      return;
+    }
+    console.log('loadProcessedData called for org:', selectedOrg);
+    setIsLoadingRef(true);
     setIsLoading(true);
     try {
       const response = await fetch(`${config.backendUrl}/api/v1/attachments/processed-data/${encodeURIComponent(selectedOrg)}`);
       if (!response.ok) {
-        throw new Error('Failed to fetch processed data');
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
       const data = await response.json();
+      console.log('Raw API data length:', data.length);
+      console.log('Raw API data sample:', data.slice(0, 3));
+      
       // Transform the API response: extract data from each ProcessedDataItem
-      const transformedData = data.map((item: any) => ({
-        id: item.id,
-        ...item.data
+      const transformedData = data.map((item: any, index: number) => ({
+        ...item.data, // Spread data first
+        id: item.id ? `${selectedOrg}-${item.id}` : `${selectedOrg}-fallback-${index}`, // Then override with our composite ID
+        originalId: item.id,
+        backendId: item.id, // Keep the original backend ID
+        dataId: item.data?.id // Keep the original data.id if it exists
       }));
+      
+      console.log('Transformed data length:', transformedData.length);
+      console.log('Transformed data sample:', transformedData.slice(0, 3).map((item: any) => ({id: item.id, originalId: item.originalId})));
+      
+      // Check for duplicate IDs in transformed data
+      const ids = transformedData.map((item: any) => item.id);
+      const idCounts = ids.reduce((acc: any, id: any) => {
+        acc[id] = (acc[id] || 0) + 1;
+        return acc;
+      }, {});
+      const duplicateIds = Object.keys(idCounts).filter(id => idCounts[id] > 1);
+      if (duplicateIds.length > 0) {
+        console.error('Duplicate IDs found in transformed data:', duplicateIds);
+        console.error('ID counts:', idCounts);
+      }
+      
+      // Check for duplicate original IDs in raw data
+      const originalIds = data.map((item: any) => item.id).filter(Boolean);
+      const originalIdCounts = originalIds.reduce((acc: any, id: any) => {
+        acc[id] = (acc[id] || 0) + 1;
+        return acc;
+      }, {});
+      const duplicateOriginalIds = Object.keys(originalIdCounts).filter(id => originalIdCounts[id] > 1);
+      if (duplicateOriginalIds.length > 0) {
+        console.error('Duplicate original IDs found in raw data:', duplicateOriginalIds);
+        console.error('Original ID counts:', originalIdCounts);
+      }
+      
+      console.log('Setting processedData with', transformedData.length, 'items');
       setProcessedData(transformedData);
     } catch (error) {
       console.error("Failed to load processed data:", error);
@@ -100,6 +142,7 @@ export default function AttachmentProcessPage() {
       setProcessedData([]);
     } finally {
       setIsLoading(false);
+      setIsLoadingRef(false);
     }
     // Reset selections when loading new data
     setSelectedRecords(new Set());
@@ -107,12 +150,17 @@ export default function AttachmentProcessPage() {
   };
 
   const toggleRecordSelection = (recordId: string) => {
+    console.log('toggleRecordSelection called with recordId:', recordId);
+    console.log('current selectedRecords:', Array.from(selectedRecords));
     const newSelected = new Set(selectedRecords);
     if (newSelected.has(recordId)) {
+      console.log('removing recordId:', recordId);
       newSelected.delete(recordId);
     } else {
+      console.log('adding recordId:', recordId);
       newSelected.add(recordId);
     }
+    console.log('new selectedRecords:', Array.from(newSelected));
     setSelectedRecords(newSelected);
   };
 
@@ -236,18 +284,18 @@ export default function AttachmentProcessPage() {
               // 如果data直接是数组
               extractResult.data.forEach((item: any, index: number) => {
                 console.log('处理数组项:', item);
-                results.push(normalizeRow(item, `${recordId}-${index}`, record));
+                results.push(normalizeRow(item, `${record.originalId || recordId}-${index}`, record));
               });
             } else if (extractResult.data.items && Array.isArray(extractResult.data.items)) {
               // 如果有items数组
               extractResult.data.items.forEach((item: any, index: number) => {
                 console.log('处理items项:', item);
-                results.push(normalizeRow(item, `${recordId}-${index}`, record));
+                results.push(normalizeRow(item, `${record.originalId || recordId}-${index}`, record));
               });
             } else {
               // 单个对象格式
               console.log('处理单个对象:', extractResult.data);
-              results.push(normalizeRow(extractResult.data, recordId, record));
+              results.push(normalizeRow(extractResult.data, record.originalId || recordId, record));
             }
           }
         }
@@ -494,7 +542,7 @@ export default function AttachmentProcessPage() {
                     <TableBody>
                       {processedData.map((row, rowIndex) => (
                         <TableRow 
-                          key={`row-${(row.link || 'nolink')}-${(row['决定书文号'] || row['记录ID'] || row.id || 'noid')}-${rowIndex}`}
+                          key={`${selectedOrg}-${row.id}-${rowIndex}`}
                         > 
                           <TableCell className="text-center">
                             <button

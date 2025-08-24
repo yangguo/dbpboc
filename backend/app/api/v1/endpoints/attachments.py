@@ -309,12 +309,15 @@ async def get_processed_data(org_name: str) -> List[ProcessedDataItem]:
             logger.info(f"Filtered processed data: {original_count} -> {filtered_count} (excluded {original_count - filtered_count} existing links)")
         
         processed_data = []
-        for idx, (_, row) in enumerate(df.iterrows(), 1):
+        for idx, (original_idx, row) in enumerate(df.iterrows(), 1):
             row_dict = row.to_dict()
             # 添加序号字段
             row_dict['序号'] = idx
+            # 使用原始索引+link的hash作为稳定的ID，确保选择状态的一致性
+            link = row_dict.get('link', '')
+            stable_id = f"{original_idx}_{hash(link) % 10000}" if link else str(original_idx)
             data_item = ProcessedDataItem(
-                id=str(idx),
+                id=stable_id,
                 data=row_dict
             )
             processed_data.append(data_item)
