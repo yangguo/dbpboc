@@ -124,7 +124,7 @@ export default function AttachmentProcessPage() {
     }
   };
 
-  const extractPenaltyInfo = async (text: string): Promise<any> => {
+  const extractPenaltyInfo = async (text: string, link?: string): Promise<any> => {
     try {
       const response = await fetch(`${config.backendUrl}/api/v1/cases/extract`, {
         method: 'POST',
@@ -133,7 +133,8 @@ export default function AttachmentProcessPage() {
         },
         body: JSON.stringify({
           prompt: '', // 后端已有完整的提示词逻辑
-          text: text
+          text: text,
+          link: link || null
         })
       });
       
@@ -220,7 +221,7 @@ export default function AttachmentProcessPage() {
       for (const recordId of selectedRecords) {
         const record = processedData.find(r => r.id === recordId);
         if (record && record.content) {
-          const extractResult = await extractPenaltyInfo(record.content);
+          const extractResult = await extractPenaltyInfo(record.content, record.link);
           console.log('原始提取结果:', extractResult);
           
           // 处理新的数据结构：data.items 是数组
@@ -485,7 +486,9 @@ export default function AttachmentProcessPage() {
                     </TableHeader>
                     <TableBody>
                       {processedData.map((row, rowIndex) => (
-                        <TableRow key={row.id}>
+                        <TableRow 
+                          key={`row-${(row.link || 'nolink')}-${(row['决定书文号'] || row['记录ID'] || row.id || 'noid')}-${rowIndex}`}
+                        > 
                           <TableCell className="text-center">
                             <button
                               onClick={() => toggleRecordSelection(row.id)}
@@ -597,7 +600,7 @@ export default function AttachmentProcessPage() {
                     </TableHeader>
                   <TableBody>
                     {extractedResults.map((result, index) => (
-                      <TableRow key={result.id || index} className="hover:bg-muted/50">
+                      <TableRow key={`result-${result.id || `idx-${index}`}`} className="hover:bg-muted/50">
                         <TableCell className="text-center font-medium whitespace-nowrap">
                           {result.id}
                         </TableCell>
@@ -615,8 +618,8 @@ export default function AttachmentProcessPage() {
                           <div className="break-words leading-relaxed" title={result['主要违法违规事实']}>
                             {result['主要违法违规事实'] ? (
                               <ul className="list-disc pl-5">
-                                {(result['主要违法违规事实'] || '').split('；').map((fact: string, index: number) => (
-                                  <li key={index}>{fact}</li>
+                                {(result['主要违法违规事实'] || '').split('；').filter((fact: string) => fact.trim()).map((fact: string, factIndex: number) => (
+                                  <li key={`fact-${index}-${factIndex}`}>{fact}</li>
                                 ))}
                               </ul>
                             ) : (

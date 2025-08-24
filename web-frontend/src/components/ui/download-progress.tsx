@@ -216,8 +216,11 @@ export function DownloadProgressTracker({
           <div className="space-y-3">
             <div className="text-sm font-semibold text-gray-700 dark:text-gray-300">文件详情</div>
             <div className="max-h-64 overflow-y-auto space-y-2">
-              {status.files.map((file) => (
-                <div key={file.attachment_id} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border">
+              {status.files.map((file, index) => (
+                <div
+                  key={file.attachment_id || file.filename || `file-${index}`}
+                  className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border"
+                >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       {getStatusIcon(file.status)}

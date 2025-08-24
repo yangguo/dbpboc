@@ -522,7 +522,7 @@ export default function AttachmentReadPage() {
                     <TableBody>
                       {files.map((file, index) => (
                         <TableRow 
-                          key={file.id}
+                          key={file.id || `file-${index}`}
                         >
                           <TableCell>
                             <Checkbox 
@@ -621,16 +621,16 @@ export default function AttachmentReadPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      {extractedResults.length > 0 && Object.keys(extractedResults[0]).map((key) => (
-                        <TableHead key={key}>{key}</TableHead>
+                      {extractedResults.length > 0 && Object.keys(extractedResults[0]).filter(key => key != null).map((key, i) => (
+                        <TableHead key={`${key || 'unknown'}-${i}`}>{key}</TableHead>
                       ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {extractedResults.map((row, index) => (
-                      <TableRow key={index}>
-                        {Object.values(row).map((value, cellIndex) => (
-                          <TableCell key={cellIndex}>
+                      <TableRow key={`extracted-result-${index}`}>
+                        {Object.entries(row).map(([key, value], cellIndex) => (
+                          <TableCell key={`cell-${index}-${key || cellIndex}`}>
                             <div className="max-w-xs truncate">
                               {String(value)}
                             </div>

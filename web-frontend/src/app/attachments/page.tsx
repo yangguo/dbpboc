@@ -877,7 +877,7 @@ export default function AttachmentsPage() {
                   <div className="text-sm font-medium text-yellow-700">跳过详情:</div>
                   <div className="space-y-1">
                     {downloadResult.skipped_files.map((skipped, index: number) => (
-                      <div key={index} className="text-sm text-yellow-600 bg-yellow-50 p-2 rounded">
+                      <div key={`skipped-${skipped.id || index}`} className="text-sm text-yellow-600 bg-yellow-50 p-2 rounded">
                         附件 {skipped.id} ({skipped.filename}): {skipped.reason}
                       </div>
                     ))}
@@ -890,7 +890,7 @@ export default function AttachmentsPage() {
                   <div className="text-sm font-medium text-red-700">失败详情:</div>
                   <div className="space-y-1">
                     {downloadResult.failed_downloads.map((failure, index: number) => (
-                      <div key={index} className="text-sm text-red-600 bg-red-50 p-2 rounded">
+                      <div key={`failed-${failure.id || index}`} className="text-sm text-red-600 bg-red-50 p-2 rounded">
                         附件 {failure.id}: {failure.error}
                       </div>
                     ))}

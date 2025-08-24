@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import logging
 from fastapi import APIRouter, HTTPException, status, Query
 from pydantic import BaseModel
@@ -26,19 +26,79 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
 
+# Accumulators for LLM extract endpoint (save every 5 requests)
+import threading
+acc_extract_items: List[Dict[str, Any]] = []
+acc_extract_request_count = 0
+acc_extract_lock = threading.Lock()
+
 # LLM related models
 class LLMExtractRequest(BaseModel):
     prompt: str = ""  # 可选参数，后端有内置提示词逻辑
     text: str
+    link: Optional[str] = None  # 可选：来源链接
 
 class LLMExtractResponse(BaseModel):
     success: bool
     data: Dict[str, Any]
     message: str = ""
 
-def extract_penalty_info(text): 
+def extract_penalty_info(text: str, source_link: Optional[str] = None): 
      """使用LLM提取行政处罚决定书关键信息""" 
      try: 
+         logger.info(f"[llm-extract] extract_penalty_info called with source_link: {source_link}")
+         # 用于本次提取批次的统一时间戳
+         batch_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+
+         # 内部工具：保存“当前全部结果”到 temp/extract 子目录（单文件，减少文件数量）
+         def save_extract_full(items: List[Dict[str, Any]], prefix: str = "llm_extract") -> None:
+             try:
+                 if not items:
+                     return
+                 df = pd.DataFrame(items)
+                 logger.info(f"[llm-extract] save_extract_full called with {len(items)} items, link column exists: {'link' in df.columns}")
+                 if 'link' in df.columns:
+                     non_empty_links = df['link'].notna().sum()
+                     logger.info(f"[llm-extract] link column statistics: {non_empty_links} non-empty out of {len(df)} total")
+                     logger.info(f"[llm-extract] sample link values: {df['link'].head(3).tolist()}")
+                 
+                 # 仅保留标准化字段，避免重复列；保证包含 link 列
+                 preferred_cols = [
+                     "link",
+                     "记录ID", "决定书文号", "被处罚当事人", "违法事实",
+                     "处罚依据", "处罚决定", "处罚机关", "决定日期",
+                     "行业", "罚没金额", "违规类型", "监管地区",
+                 ]
+                 cols_to_keep = [c for c in preferred_cols if c in df.columns]
+                 # 如果 link 不在列中，也加入一个空列，保证列存在
+                 if "link" not in df.columns:
+                     df["link"] = ""
+                     cols_to_keep = ["link"] + cols_to_keep
+                 df = df.loc[:, cols_to_keep]
+
+                 basename = f"{prefix}_{batch_timestamp}_total{len(items)}"
+                 savetempsub(df, basename, "extract")
+                 logger.info(
+                     f"[llm-extract] TEMP_SAVE cumulative_count={len(items)} file={basename}.csv"
+                 )
+             except Exception as e:
+                 logger.info(f"[llm-extract] temp_save_error err={e}")
+
+         # 内部工具：累计并按“每5次请求”保存一次全部结果
+         def maybe_accumulate_and_save(items: List[Dict[str, Any]]):
+             try:
+                 global acc_extract_request_count, acc_extract_items
+                 with acc_extract_lock:
+                     acc_extract_request_count += 1
+                     if items:
+                         acc_extract_items.extend(items)
+                     if acc_extract_request_count % 5 == 0 and acc_extract_items:
+                         save_extract_full(acc_extract_items)
+                         logger.info(
+                             f"[llm-extract] BATCH_SAVE request_count={acc_extract_request_count} total_items={len(acc_extract_items)}"
+                         )
+             except Exception as e:
+                 logger.info(f"[llm-extract] accumulate_error err={e}")
          # 规范化字段名称，适配前端表格显示的列名（提升作用域，供所有解析分支复用）
          def normalize_item(item: dict, idx: int) -> dict:
              def pick(*keys: str) -> str:
@@ -61,7 +121,7 @@ def extract_penalty_info(text):
              amount = pick("罚没总金额", "罚没金额", "罚款金额")
 
              # Return both legacy and normalized keys to keep FE compatibility
-             return {
+             normalized_item = {
                  # Common/normalized fields
                  "记录ID": str(idx + 1),
                  "决定书文号": doc_no,
@@ -84,6 +144,20 @@ def extract_penalty_info(text):
                  "作出处罚决定的日期": date_,
                  "罚没总金额": amount,
              }
+             
+             # 保留原始数据中的link字段（如果存在）
+             if "link" in item:
+                 normalized_item["link"] = item["link"]
+             
+             return normalized_item
+
+         # 为输出记录附加来源链接（如果提供）
+         def attach_link(items: List[Dict[str, Any]]):
+             # 总是附加 link 字段（若无来源则为空字符串），确保临时文件有该列
+             logger.info(f"[llm-extract] attach_link called with source_link: {source_link}, items_count: {len(items)}")
+             for it in items:
+                 it["link"] = source_link or ""
+             logger.info(f"[llm-extract] attach_link completed, first item link: {items[0].get('link', 'NO_LINK') if items else 'NO_ITEMS'}")
 
          # 检查API密钥是否配置 
          if not settings.OPENAI_API_KEY: 
@@ -211,6 +285,9 @@ def extract_penalty_info(text):
                 } 
             
             normalized = [normalize_item(item, i) for i, item in enumerate(result)]
+            attach_link(normalized)
+            # 累计请求并在每5次请求时保存一次全部结果
+            maybe_accumulate_and_save(normalized)
 
             return {
                 "success": True,
@@ -230,6 +307,9 @@ def extract_penalty_info(text):
                          print(f"通过正则表达式匹配成功解析JSON数组，提取到 {len(result)} 条记录") 
                          # 标准化字段，确保前端列名一致
                          normalized = [normalize_item(item, i) for i, item in enumerate(result)]
+                         attach_link(normalized)
+                         # 累计请求并在每5次请求时保存一次全部结果
+                         maybe_accumulate_and_save(normalized)
                          return { 
                              "success": True, 
                              "data": {"items": normalized} 
@@ -240,20 +320,23 @@ def extract_penalty_info(text):
              # 如果数组匹配失败，尝试匹配单个JSON对象 
              json_object_pattern = r'\{(?:[^{}]*|\{[^}]*\})*\}' 
              json_matches = re.findall(json_object_pattern, result_text, re.DOTALL) 
-             if json_matches: 
-                 try: 
-                     results = [] 
-                     for match in json_matches: 
-                         obj = json.loads(match) 
-                         results.append(obj) 
-                     print(f"通过对象匹配成功解析JSON，提取到 {len(results)} 条记录") 
-                     normalized = [normalize_item(item, i) for i, item in enumerate(results)]
-                     return { 
-                         "success": True, 
-                         "data": {"items": normalized} 
-                     } 
-                 except json.JSONDecodeError: 
-                     pass 
+             if json_matches:
+                try:
+                    results = []
+                    for match in json_matches:
+                        obj = json.loads(match)
+                        results.append(obj)
+                    print(f"通过对象匹配成功解析JSON，提取到 {len(results)} 条记录")
+                    normalized = [normalize_item(item, i) for i, item in enumerate(results)]
+                    attach_link(normalized)
+                    # 累计请求并在每5次请求时保存一次全部结果
+                    maybe_accumulate_and_save(normalized)
+                    return {
+                        "success": True,
+                        "data": {"items": normalized}
+                    }
+                except json.JSONDecodeError:
+                    pass
              
              # 最后尝试：查找所有可能的JSON片段并尝试修复 
              try: 
@@ -267,6 +350,9 @@ def extract_penalty_info(text):
                  if not isinstance(result, list): 
                      result = [result] 
                  normalized = [normalize_item(item, i) for i, item in enumerate(result)]
+                 attach_link(normalized)
+                 # 累计请求并在每5次请求时保存一次全部结果
+                 maybe_accumulate_and_save(normalized)
                  return { 
                      "success": True, 
                      "data": {"items": normalized} 
@@ -1987,10 +2073,16 @@ async def export_cases_csv(
 async def extract_penalty_info_endpoint(request: LLMExtractRequest):
     """Extract penalty information from text using LLM"""
     try:
-        logger.info(f"LLM extract request received for text length: {len(request.text)}")
+        logger.info(f"LLM extract request received for text length: {len(request.text)}, link: {request.link}")
+        
+        # 重置累计变量，每次点击"处理选中记录"时从头开始累计
+        global acc_extract_items, acc_extract_request_count
+        with acc_extract_lock:
+            acc_extract_items = []
+            acc_extract_request_count = 0
         
         # 调用提取函数
-        result = extract_penalty_info(request.text)
+        result = extract_penalty_info(request.text, request.link)
         
         if result["success"]:
             return LLMExtractResponse(
