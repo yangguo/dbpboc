@@ -36,6 +36,7 @@ def get_csvdf(penfolder, beginwith):
 def get_pboc_data(orgname: str, data_type: str):
     """
     Gets the data for a given organization and data type ('sum' or 'dtl').
+    For 'dtl' data, gets all data and links with sum data by link field to get dates.
     """
     if data_type not in ["sum", "dtl"]:
         return pd.DataFrame()
@@ -46,12 +47,44 @@ def get_pboc_data(orgname: str, data_type: str):
     if all_data.empty:
         return pd.DataFrame()
 
-    org_data = all_data[all_data["区域"] == orgname]
-    
-    if not org_data.empty:
-        org_data = org_data.copy()
-        if "date" in org_data.columns:
-            org_data["发布日期"] = pd.to_datetime(org_data["date"], errors='coerce').dt.date
+    if data_type == "sum":
+        # For sum data, filter by orgname as before
+        org_data = all_data[all_data["区域"] == orgname]
+        
+        if not org_data.empty:
+            org_data = org_data.copy()
+            if "date" in org_data.columns:
+                org_data["发布日期"] = pd.to_datetime(org_data["date"], errors='coerce').dt.date
+    else:
+        # For dtl data, follow the process: link -> sum data -> filter by region
+        # Step 1: Get sum data first
+        sum_data = get_csvdf(PBOC_DATA_PATH, "pbocsum")
+        if sum_data.empty:
+            return pd.DataFrame()
+        
+        # Step 2: Filter sum data by orgname (region)
+        org_sum_data = sum_data[sum_data["区域"] == orgname].copy()
+        if org_sum_data.empty:
+            return pd.DataFrame()
+        
+        # Step 3: Use link field to associate dtl data with filtered sum data
+        if "link" not in all_data.columns or "link" not in org_sum_data.columns:
+            return pd.DataFrame()
+        
+        # Filter dtl data to only include records with links from this organization
+        org_data = all_data[all_data["link"].isin(org_sum_data["link"])].copy()
+        
+        # Step 4: Add date information by merging with sum data
+        if not org_data.empty and "date" in org_sum_data.columns:
+            # Remove any existing date-related columns from org_data to avoid conflicts
+            date_columns_to_remove = [col for col in org_data.columns if col in ["发布日期", "date"]]
+            if date_columns_to_remove:
+                org_data = org_data.drop(columns=date_columns_to_remove)
+            
+            org_sum_data["发布日期"] = pd.to_datetime(org_sum_data["date"], errors='coerce').dt.date
+            # Only keep link and date columns from sum data for merging
+            date_mapping = org_sum_data[["link", "发布日期"]].drop_duplicates()
+            org_data = org_data.merge(date_mapping, on="link", how="left")
     
     return org_data
 

@@ -1926,7 +1926,13 @@ def get_pboc_data_for_pending(orgname: str, data_type: str):
     all_data = get_csvdf_for_pending(PBOC_DATA_PATH, beginwith)
     if all_data.empty:
         return pd.DataFrame()
-    org_data = all_data[all_data["区域"] == orgname]
+    
+    # For dtl data, don't filter by region; for sum data, filter by region
+    if data_type == "dtl":
+        org_data = all_data
+    else:
+        org_data = all_data[all_data["区域"] == orgname]
+    
     if not org_data.empty:
         org_data = org_data.copy()
         if "date" in org_data.columns:
@@ -1953,7 +1959,16 @@ async def get_pending_orgs():
                 pending_orgs.append(org_name)
                 continue
 
-            max_dtl_date = dtl_df["发布日期"].max()
+            # 从关联的sum表获取发布日期，而不是从dtl表
+            # 通过link字段关联，获取dtl中对应的sum发布日期
+            if not dtl_df.empty and 'link' in dtl_df.columns and 'link' in sum_df.columns:
+                # 获取dtl中的所有link
+                dtl_links = dtl_df['link'].dropna().unique()
+                # 从sum_df中获取这些link对应的最大发布日期
+                related_sum_dates = sum_df[sum_df['link'].isin(dtl_links)]['发布日期']
+                max_dtl_date = related_sum_dates.max() if not related_sum_dates.empty else pd.NaT
+            else:
+                max_dtl_date = pd.NaT
 
             if pd.isna(max_dtl_date) or max_dtl_date < max_sum_date:
                 pending_orgs.append(org_name)

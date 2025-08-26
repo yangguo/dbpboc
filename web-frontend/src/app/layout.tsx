@@ -1,18 +1,16 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+// Use system fonts instead of Google Fonts to avoid network issues
+const systemFonts = {
+  variable: "--font-inter",
+};
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const systemMono = {
+  variable: "--font-system-mono",
+};
 
 export const metadata: Metadata = {
   title: "PBOC 案例管理系统",
@@ -27,7 +25,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${systemFonts.variable} ${systemMono.variable} antialiased`}
       >
         <ThemeProvider
           attribute="class"
