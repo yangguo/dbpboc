@@ -22,6 +22,8 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException, WebDriverException
+import socket
+import urllib.parse
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -932,6 +934,37 @@ class UpdateListRequest(BaseModel):
 class UpdateDetailsRequest(BaseModel):
     orgName: str
 
+def validate_url_hostname(url: str) -> bool:
+    """Validate if the hostname in the URL can be resolved and connected to."""
+    try:
+        parsed_url = urllib.parse.urlparse(url)
+        hostname = parsed_url.hostname
+        port = parsed_url.port or (443 if parsed_url.scheme == 'https' else 80)
+        
+        if not hostname:
+            return False
+        
+        # Try to resolve the hostname
+        ip_address = socket.gethostbyname(hostname)
+        logger.info(f"[validate_url_hostname] HOSTNAME_RESOLVED url={url} hostname={hostname} ip={ip_address}")
+        
+        # Try to establish a connection to the host
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(10)  # 10 second timeout
+        result = sock.connect_ex((hostname, port))
+        sock.close()
+        
+        if result == 0:
+            logger.info(f"[validate_url_hostname] CONNECTION_SUCCESS url={url} hostname={hostname} port={port}")
+            return True
+        else:
+            logger.warning(f"[validate_url_hostname] CONNECTION_FAILED url={url} hostname={hostname} port={port} error_code={result}")
+            return False
+            
+    except (socket.gaierror, socket.error, ValueError) as e:
+        logger.warning(f"[validate_url_hostname] VALIDATION_FAILED url={url} hostname={parsed_url.hostname if 'parsed_url' in locals() else 'unknown'} error={str(e)}")
+        return False
+
 def get_chrome_driver(folder):
     options = webdriver.ChromeOptions()
     options.add_argument("--headless")
@@ -940,13 +973,83 @@ def get_chrome_driver(folder):
     options.add_argument("--disable-gpu")
     options.add_argument("--verbose")
     options.add_argument("--window-size=1920,1080")
-    options.add_experimental_option("prefs", {"download.default_directory": folder})
-    service = ChromeService(executable_path=ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=options)
+    
+    # Network and connection related options to improve stability
+    options.add_argument("--disable-web-security")
+    options.add_argument("--disable-features=VizDisplayCompositor")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-plugins")
+    options.add_argument("--disable-images")
+    # Removed --disable-javascript to allow basic page functionality
+    options.add_argument("--no-first-run")
+    options.add_argument("--disable-default-apps")
+    options.add_argument("--disable-background-timer-throttling")
+    options.add_argument("--disable-backgrounding-occluded-windows")
+    options.add_argument("--disable-renderer-backgrounding")
+    options.add_argument("--disable-background-networking")
+    options.add_argument("--aggressive-cache-discard")
+    
+    # Enhanced DNS and network settings for better connectivity
+    options.add_argument("--dns-prefetch-disable")
+    options.add_argument("--disable-domain-reliability")
+    options.add_argument("--disable-component-extensions-with-background-pages")
+    options.add_argument("--disable-sync")
+    options.add_argument("--disable-translate")
+    options.add_argument("--disable-ipc-flooding-protection")
+    options.add_argument("--max_old_space_size=4096")
+    options.add_argument("--force-device-scale-factor=1")
+    
+    # Additional network stability options
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-client-side-phishing-detection")
+    options.add_argument("--disable-default-apps")
+    options.add_argument("--disable-hang-monitor")
+    options.add_argument("--disable-popup-blocking")
+    options.add_argument("--disable-prompt-on-repost")
+    options.add_argument("--disable-sync")
+    options.add_argument("--disable-web-resources")
+    options.add_argument("--metrics-recording-only")
+    options.add_argument("--no-first-run")
+    options.add_argument("--safebrowsing-disable-auto-update")
+    options.add_argument("--ignore-certificate-errors")
+    options.add_argument("--ignore-ssl-errors")
+    options.add_argument("--ignore-certificate-errors-spki-list")
+    options.add_argument("--ignore-ssl-errors-list")
+    
+    # Network timeout and retry settings
+    options.add_argument("--network-service-logging-enabled")
+    options.add_argument("--enable-logging")
+    options.add_argument("--log-level=0")
+    
+    # User agent to avoid blocking
+    options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    
+    options.add_experimental_option("prefs", {
+        "download.default_directory": folder,
+        "profile.default_content_setting_values.notifications": 2,
+        "profile.default_content_settings.popups": 0,
+        "profile.managed_default_content_settings.images": 2
+    })
+    
+    # Add retry logic for ChromeDriverManager
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            service = ChromeService(executable_path=ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=options)
+            break
+        except Exception as e:
+            logger.error(f"CHROME_DRIVER_INIT_ERROR: Attempt {attempt + 1}/{max_retries} failed: {str(e)}")
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(2)  # Wait before retry
     
     # Set timeouts for page loading and element waiting
-    driver.set_page_load_timeout(45)  # Increased to 45 seconds for better reliability
-    driver.implicitly_wait(10)  # Increased to 10 seconds for element waiting
+    driver.set_page_load_timeout(60)  # Increased to 60 seconds for better reliability
+    driver.implicitly_wait(15)  # Increased to 15 seconds for element waiting
+    
+    # Add additional error logging for driver initialization
+    logger.info(f"CHROME_DRIVER_INITIALIZED: Successfully created Chrome driver with folder: {folder}")
     
     return driver
 
@@ -1499,7 +1602,86 @@ def scrape_detail_pages_with_progress_queue(links, orgname: str, progress_queue_
             try:
                 logger.info(f"[update-details-queue] PROGRESS {current_progress}/{total_links} ({progress_percent}%) org={orgname} fetching url={durl}")
                 
-                browser.get(durl)
+                # Validate URL hostname before attempting to access
+                if not validate_url_hostname(durl):
+                    logger.error(f"[update-details-queue] HOSTNAME_VALIDATION_FAILED org={orgname} url={durl} progress={current_progress}/{total_links} error=Cannot resolve hostname")
+                    continue
+                
+                # Retry mechanism for network-related errors
+                max_retries = 3
+                retry_count = 0
+                page_loaded = False
+                
+                while retry_count < max_retries and not page_loaded:
+                    try:
+                        if retry_count > 0:
+                            logger.info(f"[update-details-queue] RETRY_ATTEMPT org={orgname} url={durl} progress={current_progress}/{total_links} attempt={retry_count + 1}/{max_retries}")
+                            # Progressive delay: 2s, 5s, 10s
+                            delay = 2 ** retry_count + random.uniform(0, 2)
+                            time.sleep(delay)
+                            
+                            # Recreate browser if this is a retry due to connection issues
+                            try:
+                                browser.quit()
+                            except:
+                                pass
+                            browser = get_chrome_driver(TEMP_PATH)
+                        
+                        browser.get(durl)
+                        logger.info(f"[update-details-queue] PAGE_LOADED org={orgname} url={durl} progress={current_progress}/{total_links}")
+                        page_loaded = True
+                        
+                    except WebDriverException as web_error:
+                        error_msg = str(web_error).lower()
+                        retry_count += 1
+                        
+                        # Check for specific DNS resolution errors that should be skipped
+                        is_dns_error = any(keyword in error_msg for keyword in [
+                            'net::err_name_not_resolved', 'dns', 'name_not_resolved'
+                        ])
+                        
+                        if is_dns_error:
+                            logger.error(f"[update-details-queue] DNS_ERROR_SKIP org={orgname} url={durl} progress={current_progress}/{total_links} error_type={type(web_error).__name__} error_msg={str(web_error)}")
+                            break  # Skip this URL entirely
+                        
+                        # Check if this is a network-related error that should be retried
+                        is_network_error = any(keyword in error_msg for keyword in [
+                            'could not reach host', 'timeout', 'connection', 
+                            'network', 'unreachable'
+                        ])
+                        
+                        if is_network_error and retry_count < max_retries:
+                            logger.warning(f"[update-details-queue] NETWORK_ERROR_RETRY org={orgname} url={durl} progress={current_progress}/{total_links} attempt={retry_count}/{max_retries} error_type={type(web_error).__name__} error_msg={str(web_error)}")
+                            continue
+                        else:
+                            logger.error(f"[update-details-queue] WEBDRIVER_ERROR org={orgname} url={durl} progress={current_progress}/{total_links} error_type={type(web_error).__name__} error_msg={str(web_error)}")
+                            raise
+                            
+                    except Exception as page_error:
+                        error_msg = str(page_error).lower()
+                        retry_count += 1
+                        
+                        # Check for specific DNS resolution errors that should be skipped
+                        is_dns_error = any(keyword in error_msg for keyword in [
+                            'net::err_name_not_resolved', 'dns', 'name_not_resolved'
+                        ])
+                        
+                        if is_dns_error:
+                            logger.error(f"[update-details-queue] DNS_ERROR_SKIP org={orgname} url={durl} progress={current_progress}/{total_links} error_type={type(page_error).__name__} error_msg={str(page_error)}")
+                            break  # Skip this URL entirely
+                        
+                        # Check if this is a network-related error that should be retried
+                        is_network_error = any(keyword in error_msg for keyword in [
+                            'could not reach host', 'timeout', 'connection', 
+                            'network', 'unreachable'
+                        ])
+                        
+                        if is_network_error and retry_count < max_retries:
+                            logger.warning(f"[update-details-queue] GENERAL_ERROR_RETRY org={orgname} url={durl} progress={current_progress}/{total_links} attempt={retry_count}/{max_retries} error_type={type(page_error).__name__} error_msg={str(page_error)}")
+                            continue
+                        else:
+                            logger.error(f"[update-details-queue] PAGE_LOAD_ERROR org={orgname} url={durl} progress={current_progress}/{total_links} error_type={type(page_error).__name__} error_msg={str(page_error)}")
+                            raise
                 
                 # Send progress update after loading page
                 try:
@@ -1619,13 +1801,13 @@ def scrape_detail_pages_with_progress_queue(links, orgname: str, progress_queue_
                 # Pace to be gentle
                 time.sleep(random.randint(2, 5))
             except TimeoutException as e:
-                logger.info(f"[update-details-queue] page_timeout progress={current_progress}/{total_links} url={durl} err=Page load timeout after 45s")
+                logger.error(f"[update-details-queue] TIMEOUT_ERROR org={orgname} url={durl} progress={current_progress}/{total_links} error_msg=Page load timeout after 45s")
                 continue
             except WebDriverException as e:
-                logger.info(f"[update-details-queue] page_error progress={current_progress}/{total_links} url={durl} err=WebDriver error: {e}")
+                logger.error(f"[update-details-queue] WEBDRIVER_ERROR org={orgname} url={durl} progress={current_progress}/{total_links} error_type={type(e).__name__} error_msg={str(e)}")
                 continue
             except Exception as e:
-                logger.info(f"[update-details-queue] page_error progress={current_progress}/{total_links} url={durl} err={e}")
+                logger.error(f"[update-details-queue] GENERAL_ERROR org={orgname} url={durl} progress={current_progress}/{total_links} error_type={type(e).__name__} error_msg={str(e)}")
                 continue
     finally:
         browser.quit()
@@ -1824,6 +2006,7 @@ async def update_details_selective_stream(request: UpdateDetailsWithLinksRequest
                     results['tbl_count'] = tbl_count
                     results['completed'] = True
                 except Exception as e:
+                    logger.error(f"[run_scraping] ERROR org={org_name} error_type={type(e).__name__} error_message={str(e)}")
                     results['error'] = str(e)
                     results['completed'] = True
                     # Send error to queue
