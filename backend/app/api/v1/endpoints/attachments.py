@@ -111,7 +111,7 @@ def get_csvdf(folder: str, beginwith: str) -> pd.DataFrame:
     dflist = []
     for filepath in files:
         try:
-            df = pd.read_csv(filepath)
+            df = pd.read_csv(filepath, low_memory=False)
             dflist.append(df)
         except Exception as e:
             logger.error(f"Error reading {filepath}: {e}")
@@ -144,6 +144,23 @@ async def get_download_list(org_name: str) -> List[AttachmentItem]:
         
         if df.empty:
             return []
+        
+        # Get existing links from all pbocdtl files to exclude them
+        existing_links = set()
+        try:
+            pbocdtl_df = get_csvdf(PBOC_DATA_PATH, "pbocdtl")
+            if not pbocdtl_df.empty and 'link' in pbocdtl_df.columns:
+                existing_links = set(pbocdtl_df['link'].dropna().tolist())
+                logger.info(f"Found {len(existing_links)} existing links in pbocdtl files")
+        except Exception as e:
+            logger.warning(f"Error reading pbocdtl files: {e}")
+        
+        # Filter out rows with links that already exist in pbocdtl files
+        if existing_links and 'link' in df.columns:
+            original_count = len(df)
+            df = df[~df['link'].isin(existing_links)]
+            filtered_count = len(df)
+            logger.info(f"Filtered download list: {original_count} -> {filtered_count} (excluded {original_count - filtered_count} existing links)")
         
         # Check downloads directory for existing files
         downloads_dir = os.path.join(TEMP_PATH, org_name_index, "downloads")
@@ -1470,6 +1487,23 @@ async def get_attachment_text_list(org_name: str) -> List[AttachmentTextItem]:
         
         if df.empty:
             return []
+        
+        # Get existing links from all pbocdtl files to exclude them
+        existing_links = set()
+        try:
+            pbocdtl_df = get_csvdf(PBOC_DATA_PATH, "pbocdtl")
+            if not pbocdtl_df.empty and 'link' in pbocdtl_df.columns:
+                existing_links = set(pbocdtl_df['link'].dropna().tolist())
+                logger.info(f"Found {len(existing_links)} existing links in pbocdtl files")
+        except Exception as e:
+            logger.warning(f"Error reading pbocdtl files: {e}")
+        
+        # Filter out rows with links that already exist in pbocdtl files
+        if existing_links and 'link' in df.columns:
+            original_count = len(df)
+            df = df[~df['link'].isin(existing_links)]
+            filtered_count = len(df)
+            logger.info(f"Filtered attachment text list: {original_count} -> {filtered_count} (excluded {original_count - filtered_count} existing links)")
         
         # Check downloads directory for existing files
         downloads_dir = os.path.join(TEMP_PATH, org_name_index, "downloads")
