@@ -159,7 +159,8 @@ def get_csvdf(penfolder, beginwith):
     dflist = []
     # filelist = []
     for filepath in files2:
-        pendf = pd.read_csv(filepath, index_col=0)
+        # Use low_memory=False to avoid mixed-type DtypeWarning across chunks
+        pendf = pd.read_csv(filepath, index_col=0, low_memory=False)
         dflist.append(pendf)
         # filelist.append(filename)
     if len(dflist) > 0:
@@ -204,14 +205,20 @@ def searchpboc(
         "link",
         "发布日期",
     ]
+    # Normalize inputs and compare on pure dates to avoid dtype issues
+    start_d = pd.to_datetime(start_date).date()
+    end_d = pd.to_datetime(end_date).date()
+
+    pub_dates_date = pd.to_datetime(df["发布日期"], errors="coerce").dt.date
+
     searchdf = df[
-        (df["发布日期"] >= start_date)
-        & (df["发布日期"] <= end_date)
-        & (df["企业名称"].str.contains(people_text))
-        & (df["处罚决定书文号"].str.contains(wenhao_text))
-        & (df["违法行为类型"].str.contains(event_text))
-        & (df["行政处罚内容"].str.contains(penalty_text))
-        & (df["作出行政处罚决定机关名称"].str.contains(org_text))
+        (pub_dates_date >= start_d)
+        & (pub_dates_date <= end_d)
+        & (df["企业名称"].str.contains(people_text, na=False))
+        & (df["处罚决定书文号"].str.contains(wenhao_text, na=False))
+        & (df["违法行为类型"].str.contains(event_text, na=False))
+        & (df["行政处罚内容"].str.contains(penalty_text, na=False))
+        & (df["作出行政处罚决定机关名称"].str.contains(org_text, na=False))
         & (df["区域"].isin(province))
         & (df["amount"] >= min_penalty)
     ]  # [col]
