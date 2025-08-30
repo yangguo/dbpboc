@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/main-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Search, Filter, ExternalLink } from "lucide-react";
 import { config } from "@/lib/config";
 import { DateRange } from "@/components/ui/date-range";
@@ -56,7 +57,23 @@ export default function CasesPage() {
   const [error, setError] = useState<string | null>(null);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
 
+  // Dialog state for case details
+  const [selectedCase, setSelectedCase] = useState<CaseItem | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
+
+  // Function to handle row click and open dialog
+  const handleRowClick = (caseItem: CaseItem) => {
+    setSelectedCase(caseItem);
+    setIsDialogOpen(true);
+  };
+
+  // Function to close dialog
+  const handleCloseDialog = () => {
+    setIsDialogOpen(false);
+    setSelectedCase(null);
+  };
 
   const fetchCases = async () => {
     setLoading(true);
@@ -326,72 +343,72 @@ export default function CasesPage() {
             <div>
               <h4 className="text-sm font-medium mb-3 text-muted-foreground">快速搜索模板</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => { setViolationType("反洗钱"); setPage(1); fetchCases(); }}
                   className="text-xs"
                 >
                   反洗钱违法
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => { setIndustry("银行业"); setMinAmount("100000"); setPage(1); fetchCases(); }}
                   className="text-xs"
                 >
                   银行业重大处罚
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => { setViolationType("内控"); setPage(1); fetchCases(); }}
                   className="text-xs"
                 >
                   内控管理违规
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => { setCategory("消费者权益"); setPage(1); fetchCases(); }}
                   className="text-xs"
                 >
                   消费者权益
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => { setIndustry("保险业"); setPage(1); fetchCases(); }}
                   className="text-xs"
                 >
                   保险业处罚
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => { setViolationType("数据"); setPage(1); fetchCases(); }}
                   className="text-xs"
                 >
                   数据安全违规
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => { setMinAmount("1000000"); setPage(1); fetchCases(); }}
                   className="text-xs"
                 >
                   百万以上处罚
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => { 
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
                     const thirtyDaysAgo = new Date();
                     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
                     setStartDate(thirtyDaysAgo.toISOString().split('T')[0]);
                     setEndDate(new Date().toISOString().split('T')[0]);
-                    setPage(1); 
-                    fetchCases(); 
+                    setPage(1);
+                    fetchCases();
                   }}
                   className="text-xs"
                 >
@@ -423,22 +440,22 @@ export default function CasesPage() {
                   <Button variant="secondary" onClick={() => { setPage(1); fetchCases(); }} disabled={loading}>
                     应用筛选
                   </Button>
-                  <Button variant="outline" onClick={() => { 
-                    setKeyword(""); 
-                    setDocNo(""); 
-                    setEntityName(""); 
-                    setViolationType(""); 
-                    setPenaltyContent(""); 
-                    setAgency(""); 
-                    setRegion(""); 
-                    setProvince(""); 
-                    setIndustry(""); 
-                    setCategory(""); 
-                    setStartDate(""); 
-                    setEndDate(""); 
-                    setMinAmount(""); 
-                    setMaxAmount(""); 
-                    setPage(1); 
+                  <Button variant="outline" onClick={() => {
+                    setKeyword("");
+                    setDocNo("");
+                    setEntityName("");
+                    setViolationType("");
+                    setPenaltyContent("");
+                    setAgency("");
+                    setRegion("");
+                    setProvince("");
+                    setIndustry("");
+                    setCategory("");
+                    setStartDate("");
+                    setEndDate("");
+                    setMinAmount("");
+                    setMaxAmount("");
+                    setPage(1);
                   }}>
                     清除筛选
                   </Button>
@@ -489,7 +506,11 @@ export default function CasesPage() {
                 </TableHeader>
                 <TableBody>
                   {items.map((it, idx) => (
-                    <TableRow key={`${it.uid || it.doc_no || it.link}-${idx}`}>
+                    <TableRow
+                      key={`${it.uid || it.doc_no || it.link}-${idx}`}
+                      className="cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => handleRowClick(it)}
+                    >
                       <TableCell className="font-mono text-xs">
                         {it.doc_no || "-"}
                       </TableCell>
@@ -515,8 +536,8 @@ export default function CasesPage() {
                       </TableCell>
                       <TableCell>
                         <div className="text-sm font-medium text-right">
-                          {typeof it.amount_num === 'number' 
-                            ? `¥${it.amount_num.toLocaleString()}` 
+                          {typeof it.amount_num === 'number'
+                            ? `¥${it.amount_num.toLocaleString()}`
                             : (it.amount ? `¥${it.amount}` : "-")
                           }
                         </div>
@@ -526,7 +547,13 @@ export default function CasesPage() {
                       </TableCell>
                       <TableCell>
                         {it.link && (
-                          <Button asChild variant="ghost" size="sm" className="h-8 w-8 p-0">
+                          <Button
+                            asChild
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <a href={it.link} target="_blank" rel="noreferrer" title="查看原文">
                               <ExternalLink className="h-4 w-4" />
                             </a>
@@ -560,34 +587,34 @@ export default function CasesPage() {
                   <span>第 {page} / {totalPages} 页</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    disabled={page <= 1 || loading} 
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1 || loading}
                     onClick={() => { setPage(1); setTimeout(fetchCases, 0); }}
                   >
                     首页
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    disabled={page <= 1 || loading} 
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1 || loading}
                     onClick={() => { setPage((p) => Math.max(1, p - 1)); setTimeout(fetchCases, 0); }}
                   >
                     上一页
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    disabled={page >= totalPages || loading} 
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalPages || loading}
                     onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); setTimeout(fetchCases, 0); }}
                   >
                     下一页
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    disabled={page >= totalPages || loading} 
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalPages || loading}
                     onClick={() => { setPage(totalPages); setTimeout(fetchCases, 0); }}
                   >
                     末页
@@ -597,6 +624,149 @@ export default function CasesPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Case Details Dialog */}
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogContent className="max-w-7xl w-full max-h-[95vh] overflow-y-auto bg-white dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 shadow-2xl">
+            <DialogHeader className="pb-3 border-b border-gray-200 dark:border-gray-700">
+              <DialogTitle className="text-xl font-bold text-gray-900 dark:text-gray-100">案例详情</DialogTitle>
+              <DialogDescription className="text-sm text-gray-600 dark:text-gray-400">
+                查看完整的处罚案例信息
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedCase && (
+              <div className="space-y-4 pt-4">
+                {/* Basic Information - Compact Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">处罚文号</label>
+                    <div className="p-2 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-sm font-mono text-gray-900 dark:text-gray-100">
+                      {selectedCase.doc_no || "未提供"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">当事人</label>
+                    <div className="p-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-600 rounded text-sm text-blue-900 dark:text-blue-100 font-medium">
+                      {selectedCase.entity_name || "未提供"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">处罚区域</label>
+                    <div className="p-2 bg-green-50 dark:bg-green-900/30 border border-green-300 dark:border-green-600 rounded text-sm text-green-900 dark:text-green-100">
+                      {[selectedCase.province, selectedCase.region].filter(Boolean).join(" - ") || "未提供"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Secondary Information */}
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">处罚机关</label>
+                    <div className="p-2 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-sm text-gray-900 dark:text-gray-100">
+                      {selectedCase.agency || "未提供"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">罚款金额</label>
+                    <div className="p-2 bg-red-100 dark:bg-red-900/40 border border-red-400 dark:border-red-500 rounded text-sm font-bold text-red-800 dark:text-red-200">
+                      {typeof selectedCase.amount_num === 'number'
+                        ? `¥${selectedCase.amount_num.toLocaleString()}`
+                        : (selectedCase.amount ? `¥${selectedCase.amount}` : "未提供")
+                      }
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">发布日期</label>
+                    <div className="p-2 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-sm text-gray-900 dark:text-gray-100">
+                      {selectedCase.publish_date || selectedCase.decision_date || "未提供"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">决定日期</label>
+                    <div className="p-2 bg-purple-100 dark:bg-purple-900/40 border border-purple-400 dark:border-purple-500 rounded text-sm text-purple-900 dark:text-purple-100">
+                      {selectedCase.decision_date || "未提供"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Classification Information */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">行业分类</label>
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900/40 border border-blue-400 dark:border-blue-500 rounded text-sm text-blue-900 dark:text-blue-100 font-medium">
+                      {selectedCase.industry || "未分类"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">案例分类</label>
+                    <div className="p-2 bg-green-100 dark:bg-green-900/40 border border-green-400 dark:border-green-500 rounded text-sm text-green-900 dark:text-green-100 font-medium">
+                      {selectedCase.category || "未分类"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Detailed Information - Compact Layout */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">违法类型</label>
+                    <div className="p-3 bg-orange-50 dark:bg-orange-900/30 border-l-3 border-orange-400 dark:border-orange-500 rounded text-sm leading-relaxed text-orange-900 dark:text-orange-100 max-h-24 overflow-y-auto">
+                      {selectedCase.violation_type || "未提供"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">处罚内容</label>
+                    <div className="p-3 bg-red-50 dark:bg-red-900/30 border-l-3 border-red-400 dark:border-red-500 rounded text-sm leading-relaxed text-red-900 dark:text-red-100 max-h-24 overflow-y-auto">
+                      {selectedCase.penalty_content || "未提供"}
+                    </div>
+                  </div>
+                </div>
+
+                {selectedCase.title && (
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">案例标题</label>
+                    <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 border-l-3 border-indigo-400 dark:border-indigo-500 rounded text-sm leading-relaxed text-indigo-900 dark:text-indigo-100 font-medium">
+                      {selectedCase.title}
+                    </div>
+                  </div>
+                )}
+
+                {/* Footer Actions */}
+                <div className="border-t border-gray-200 dark:border-gray-700 pt-3 mt-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      {selectedCase.uid && (
+                        <div className="text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-3 py-1 rounded-full border border-gray-300 dark:border-gray-600">
+                          ID: {selectedCase.uid}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      {selectedCase.link && (
+                        <Button asChild variant="outline" size="sm" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-900/20">
+                          <a href={selectedCase.link} target="_blank" rel="noreferrer">
+                            <ExternalLink className="h-3 w-3 mr-1" />
+                            查看原文
+                          </a>
+                        </Button>
+                      )}
+                      <Button onClick={handleCloseDialog} variant="default" size="sm" className="text-xs px-4 bg-gray-600 hover:bg-gray-700 text-white">
+                        关闭
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );
