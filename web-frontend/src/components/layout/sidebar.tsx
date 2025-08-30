@@ -8,12 +8,9 @@ import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard,
   Search,
-  FileText,
-  Settings,
   Menu,
   X,
   BarChart3,
-  Upload,
   RefreshCw,
   Download
 } from "lucide-react";
@@ -64,24 +61,14 @@ const navigation = [
     ],
   },
   {
-    name: "文档管理",
-    href: "/documents",
-    icon: FileText,
-  },
-  {
-    name: "文档上传",
-    href: "/upload",
-    icon: Upload,
+    name: "案例下载",
+    href: "/downloads",
+    icon: Download,
   },
   {
     name: "数据分析",
     href: "/analytics",
     icon: BarChart3,
-  },
-  {
-    name: "设置",
-    href: "/settings",
-    icon: Settings,
   },
 ];
 
