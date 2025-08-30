@@ -152,7 +152,29 @@ export function DateRange({ start, end, onChange, disabled }: Props) {
     const now = new Date();
     const toStr = fmt(now);
     const past = new Date(now);
-    past.setDate(past.getDate() - days + 1);
+    past.setDate(past.getDate() - days);
+    const fromStr = fmt(past);
+    setFrom(fromStr);
+    setTo(toStr);
+    onChange(fromStr, toStr);
+  };
+
+  const applyPresetMonths = (months: number) => {
+    const now = new Date();
+    const toStr = fmt(now);
+    const past = new Date(now);
+    past.setMonth(past.getMonth() - months);
+    const fromStr = fmt(past);
+    setFrom(fromStr);
+    setTo(toStr);
+    onChange(fromStr, toStr);
+  };
+
+  const applyPresetYears = (years: number) => {
+    const now = new Date();
+    const toStr = fmt(now);
+    const past = new Date(now);
+    past.setFullYear(past.getFullYear() - years);
     const fromStr = fmt(past);
     setFrom(fromStr);
     setTo(toStr);
@@ -166,8 +188,9 @@ export function DateRange({ start, end, onChange, disabled }: Props) {
   };
 
   return (
-    <div className="flex flex-col gap-2" ref={wrapRef}>
+    <div className="flex flex-col gap-3" ref={wrapRef}>
       <Label className="text-sm">发布日期</Label>
+      {/* Date Pickers Row */}
       <div className="flex items-center gap-2">
         <div className="relative">
           <Button
@@ -208,11 +231,24 @@ export function DateRange({ start, end, onChange, disabled }: Props) {
             </div>
           )}
         </div>
-        <Button type="button" variant="secondary" size="sm" onClick={() => applyPreset(7)} disabled={disabled} className="bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30 border-blue-200 dark:border-blue-800">
-          近7天
+      </div>
+      
+      {/* Quick Select Buttons Row */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="secondary" size="sm" onClick={() => applyPresetMonths(1)} disabled={disabled} className="bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30 border-blue-200 dark:border-blue-800">
+          近一个月
         </Button>
-        <Button type="button" variant="secondary" size="sm" onClick={() => applyPreset(30)} disabled={disabled} className="bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30 border-blue-200 dark:border-blue-800">
-          近30天
+        <Button type="button" variant="secondary" size="sm" onClick={() => applyPresetMonths(3)} disabled={disabled} className="bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30 border-blue-200 dark:border-blue-800">
+          三个月
+        </Button>
+        <Button type="button" variant="secondary" size="sm" onClick={() => applyPresetMonths(6)} disabled={disabled} className="bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30 border-blue-200 dark:border-blue-800">
+          半年
+        </Button>
+        <Button type="button" variant="secondary" size="sm" onClick={() => applyPresetYears(1)} disabled={disabled} className="bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30 border-blue-200 dark:border-blue-800">
+          一年
+        </Button>
+        <Button type="button" variant="secondary" size="sm" onClick={() => applyPresetYears(3)} disabled={disabled} className="bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30 border-blue-200 dark:border-blue-800">
+          三年
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={clear} disabled={disabled} className="text-muted-foreground hover:text-foreground">
           清空

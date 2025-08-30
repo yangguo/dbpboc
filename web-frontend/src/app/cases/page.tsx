@@ -75,25 +75,91 @@ export default function CasesPage() {
     setSelectedCase(null);
   };
 
-  const fetchCases = async () => {
+  // Check if advanced filters are being used
+  const hasAdvancedFilters = () => {
+    return docNo || entityName || violationType || penaltyContent || agency || 
+           (region && region !== "all") || province || industry || category || 
+           startDate || endDate || minAmount || maxAmount;
+  };
+
+  // Keyword search only (clears advanced filters)
+  const performKeywordSearch = async () => {
+    // Clear advanced filters when doing keyword search
+    setDocNo("");
+    setEntityName("");
+    setViolationType("");
+    setPenaltyContent("");
+    setAgency("");
+    setRegion("");
+    setProvince("");
+    setIndustry("");
+    setCategory("");
+    setStartDate("");
+    setEndDate("");
+    setMinAmount("");
+    setMaxAmount("");
+    setPage(1);
+    
+    await fetchCasesWithParams({ keyword: true, advanced: false });
+  };
+
+  // Advanced filter search only (clears keyword)
+  const performAdvancedSearch = async () => {
+    // Clear keyword when doing advanced search
+    setKeyword("");
+    setPage(1);
+    
+    await fetchCasesWithParams({ keyword: false, advanced: true });
+  };
+
+  // Combined search (keeps both keyword and advanced filters)
+  const performCombinedSearch = async () => {
+    setPage(1);
+    await fetchCasesWithParams({ keyword: true, advanced: true });
+  };
+
+  // Pagination search - maintains current search mode
+  const performPaginationSearch = async () => {
+    const hasKeyword = Boolean(keyword);
+    const hasAdvanced = hasAdvancedFilters();
+    
+    if (hasKeyword && hasAdvanced) {
+      await fetchCasesWithParams({ keyword: true, advanced: true });
+    } else if (hasKeyword) {
+      await fetchCasesWithParams({ keyword: true, advanced: false });
+    } else if (hasAdvanced) {
+      await fetchCasesWithParams({ keyword: false, advanced: true });
+    }
+  };
+
+  const fetchCasesWithParams = async (options: { keyword: boolean; advanced: boolean }) => {
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (keyword) params.set("q", keyword);
-      if (docNo) params.set("doc_no", docNo);
-      if (entityName) params.set("entity_name", entityName);
-      if (violationType) params.set("violation_type", violationType);
-      if (penaltyContent) params.set("penalty_content", penaltyContent);
-      if (agency) params.set("agency", agency);
-      if (region && region !== "all") params.set("region", region);
-      if (province) params.set("province", province);
-      if (industry && industry !== "all") params.set("industry", industry);
-      if (category && category !== "all") params.set("category", category);
-      if (startDate) params.set("start_date", startDate);
-      if (endDate) params.set("end_date", endDate);
-      if (minAmount) params.set("min_amount", minAmount);
-      if (maxAmount) params.set("max_amount", maxAmount);
+      
+      // Apply keyword search if enabled
+      if (options.keyword && keyword) {
+        params.set("q", keyword);
+      }
+      
+      // Apply advanced filters if enabled
+      if (options.advanced) {
+        if (docNo) params.set("doc_no", docNo);
+        if (entityName) params.set("entity_name", entityName);
+        if (violationType) params.set("violation_type", violationType);
+        if (penaltyContent) params.set("penalty_content", penaltyContent);
+        if (agency) params.set("agency", agency);
+        if (region && region !== "all") params.set("region", region);
+        if (province) params.set("province", province);
+        if (industry) params.set("industry", industry);
+        if (category) params.set("category", category);
+        if (startDate) params.set("start_date", startDate);
+        if (endDate) params.set("end_date", endDate);
+        if (minAmount) params.set("min_amount", minAmount);
+        if (maxAmount) params.set("max_amount", maxAmount);
+      }
+      
       params.set("page", String(page));
       params.set("page_size", String(pageSize));
       params.set("verbose", "true");
@@ -153,6 +219,9 @@ export default function CasesPage() {
             </CardTitle>
             <CardDescription>
               综合搜索：企业名称、文号、违法类型、处罚内容、案例标题等所有文本内容
+              {hasAdvancedFilters() && (
+                <span className="text-orange-600 font-medium"> · 当前有高级筛选条件，搜索将仅使用关键词</span>
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -163,20 +232,34 @@ export default function CasesPage() {
                   placeholder="输入关键词进行搜索（回车搜索）"
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); setPage(1); fetchCases(); } }}
+                  onKeyDown={(e) => { 
+                    if (e.key === 'Enter' && keyword.trim()) { 
+                      e.preventDefault(); 
+                      performKeywordSearch();
+                    } 
+                  }}
                   className="pl-10"
                 />
               </div>
               <Button
-                onClick={() => { setPage(1); fetchCases(); }}
-                disabled={loading}
+                onClick={() => performKeywordSearch()}
+                disabled={loading || !keyword.trim()}
                 size="lg"
-                className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white shadow min-w-[100px]"
+                className={`shrink-0 shadow-lg min-w-[100px] transition-all duration-200 ${
+                  keyword.trim() 
+                    ? "bg-blue-600 hover:bg-blue-700 text-white hover:shadow-xl" 
+                    : "bg-gray-300 hover:bg-gray-400 text-gray-500 cursor-not-allowed"
+                }`}
               >
                 <Search className="h-4 w-4 mr-1" />
                 {loading ? "搜索中..." : "搜索"}
               </Button>
             </div>
+            {keyword && hasAdvancedFilters() && (
+              <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-800">
+                <span className="font-medium">注意：</span>点击"搜索"将清除高级筛选条件，仅使用关键词搜索；点击下方"应用筛选"将清除关键词，仅使用筛选条件；如需组合搜索请点击"组合搜索"
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -191,256 +274,143 @@ export default function CasesPage() {
               通过具体字段、地区、行业、分类、日期、金额等条件进行精确筛选
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Specific Information Filters */}
-            <div>
-              <h4 className="text-sm font-medium mb-3 text-muted-foreground">具体信息筛选</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">文号关键词</label>
-                  <Input placeholder="如 银保监罚决字..." value={docNo} onChange={(e) => setDocNo(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">处罚决定关键词</label>
-                  <Input placeholder="处罚内容关键词" value={penaltyContent} onChange={(e) => setPenaltyContent(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">当事人关键词</label>
-                  <Input placeholder="企业或个人名称" value={entityName} onChange={(e) => setEntityName(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">处罚机关关键词</label>
-                  <Input placeholder="监管机构名称" value={agency} onChange={(e) => setAgency(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">案情关键词</label>
-                  <Input placeholder="违法行为描述" value={violationType} onChange={(e) => setViolationType(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">处罚区域</label>
-                  <Select value={region} onValueChange={setRegion}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择处罚区域" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">全部区域</SelectItem>
-                      <SelectItem value="北京">北京</SelectItem>
-                      <SelectItem value="上海">上海</SelectItem>
-                      <SelectItem value="天津">天津</SelectItem>
-                      <SelectItem value="重庆">重庆</SelectItem>
-                      <SelectItem value="广东">广东</SelectItem>
-                      <SelectItem value="江苏">江苏</SelectItem>
-                      <SelectItem value="浙江">浙江</SelectItem>
-                      <SelectItem value="山东">山东</SelectItem>
-                      <SelectItem value="河南">河南</SelectItem>
-                      <SelectItem value="四川">四川</SelectItem>
-                      <SelectItem value="湖北">湖北</SelectItem>
-                      <SelectItem value="湖南">湖南</SelectItem>
-                      <SelectItem value="福建">福建</SelectItem>
-                      <SelectItem value="安徽">安徽</SelectItem>
-                      <SelectItem value="河北">河北</SelectItem>
-                      <SelectItem value="辽宁">辽宁</SelectItem>
-                      <SelectItem value="江西">江西</SelectItem>
-                      <SelectItem value="陕西">陕西</SelectItem>
-                      <SelectItem value="黑龙江">黑龙江</SelectItem>
-                      <SelectItem value="广西">广西</SelectItem>
-                      <SelectItem value="山西">山西</SelectItem>
-                      <SelectItem value="吉林">吉林</SelectItem>
-                      <SelectItem value="云南">云南</SelectItem>
-                      <SelectItem value="贵州">贵州</SelectItem>
-                      <SelectItem value="内蒙古">内蒙古</SelectItem>
-                      <SelectItem value="新疆">新疆</SelectItem>
-                      <SelectItem value="甘肃">甘肃</SelectItem>
-                      <SelectItem value="海南">海南</SelectItem>
-                      <SelectItem value="宁夏">宁夏</SelectItem>
-                      <SelectItem value="青海">青海</SelectItem>
-                      <SelectItem value="西藏">西藏</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+          <CardContent className="space-y-4">
+            {/* All Filters in Compact Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">文号关键词</label>
+                <Input placeholder="如 银保监罚决字..." value={docNo} onChange={(e) => setDocNo(e.target.value)} className="h-9" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">当事人关键词</label>
+                <Input placeholder="企业或个人名称" value={entityName} onChange={(e) => setEntityName(e.target.value)} className="h-9" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">案情关键词</label>
+                <Input placeholder="违法行为描述" value={violationType} onChange={(e) => setViolationType(e.target.value)} className="h-9" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">处罚内容关键词</label>
+                <Input placeholder="处罚内容关键词" value={penaltyContent} onChange={(e) => setPenaltyContent(e.target.value)} className="h-9" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">处罚机关关键词</label>
+                <Input placeholder="监管机构名称" value={agency} onChange={(e) => setAgency(e.target.value)} className="h-9" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">处罚区域</label>
+                <Select value={region} onValueChange={setRegion}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="选择处罚区域" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部区域</SelectItem>
+                    <SelectItem value="北京">北京</SelectItem>
+                    <SelectItem value="上海">上海</SelectItem>
+                    <SelectItem value="天津">天津</SelectItem>
+                    <SelectItem value="重庆">重庆</SelectItem>
+                    <SelectItem value="广东">广东</SelectItem>
+                    <SelectItem value="江苏">江苏</SelectItem>
+                    <SelectItem value="浙江">浙江</SelectItem>
+                    <SelectItem value="山东">山东</SelectItem>
+                    <SelectItem value="河南">河南</SelectItem>
+                    <SelectItem value="四川">四川</SelectItem>
+                    <SelectItem value="湖北">湖北</SelectItem>
+                    <SelectItem value="湖南">湖南</SelectItem>
+                    <SelectItem value="福建">福建</SelectItem>
+                    <SelectItem value="安徽">安徽</SelectItem>
+                    <SelectItem value="河北">河北</SelectItem>
+                    <SelectItem value="辽宁">辽宁</SelectItem>
+                    <SelectItem value="江西">江西</SelectItem>
+                    <SelectItem value="陕西">陕西</SelectItem>
+                    <SelectItem value="黑龙江">黑龙江</SelectItem>
+                    <SelectItem value="广西">广西</SelectItem>
+                    <SelectItem value="山西">山西</SelectItem>
+                    <SelectItem value="吉林">吉林</SelectItem>
+                    <SelectItem value="云南">云南</SelectItem>
+                    <SelectItem value="贵州">贵州</SelectItem>
+                    <SelectItem value="内蒙古">内蒙古</SelectItem>
+                    <SelectItem value="新疆">新疆</SelectItem>
+                    <SelectItem value="甘肃">甘肃</SelectItem>
+                    <SelectItem value="海南">海南</SelectItem>
+                    <SelectItem value="宁夏">宁夏</SelectItem>
+                    <SelectItem value="青海">青海</SelectItem>
+                    <SelectItem value="西藏">西藏</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">省份</label>
+                <Input placeholder="输入省份" value={province} onChange={(e) => setProvince(e.target.value)} className="h-9" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">行业类别</label>
+                <Input placeholder="输入行业类别" value={industry} onChange={(e) => setIndustry(e.target.value)} className="h-9" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">案例分类</label>
+                <Input placeholder="输入案例分类" value={category} onChange={(e) => setCategory(e.target.value)} className="h-9" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">最小金额</label>
+                <Input type="number" placeholder="最小金额" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="h-9" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">最大金额</label>
+                <Input type="number" placeholder="最大金额" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="h-9" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">每页显示</label>
+                <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10 条</SelectItem>
+                    <SelectItem value="20">20 条</SelectItem>
+                    <SelectItem value="50">50 条</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
-            {/* Location and Industry Filters */}
-            <div>
-              <h4 className="text-sm font-medium mb-3 text-muted-foreground">地区与行业</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">省份</label>
-                  <Input placeholder="输入省份" value={province} onChange={(e) => setProvince(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">行业类别</label>
-                  <Select value={industry} onValueChange={setIndustry}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择行业" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">全部行业</SelectItem>
-                      <SelectItem value="银行业">银行业</SelectItem>
-                      <SelectItem value="保险业">保险业</SelectItem>
-                      <SelectItem value="证券业">证券业</SelectItem>
-                      <SelectItem value="基金业">基金业</SelectItem>
-                      <SelectItem value="信托业">信托业</SelectItem>
-                      <SelectItem value="期货业">期货业</SelectItem>
-                      <SelectItem value="支付机构">支付机构</SelectItem>
-                      <SelectItem value="金融科技">金融科技</SelectItem>
-                      <SelectItem value="小额贷款">小额贷款</SelectItem>
-                      <SelectItem value="融资担保">融资担保</SelectItem>
-                      <SelectItem value="其他金融">其他金融</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">案例分类</label>
-                  <Select value={category} onValueChange={setCategory}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择分类" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">全部分类</SelectItem>
-                      <SelectItem value="违规经营">违规经营</SelectItem>
-                      <SelectItem value="内控管理">内控管理</SelectItem>
-                      <SelectItem value="风险管理">风险管理</SelectItem>
-                      <SelectItem value="反洗钱">反洗钱</SelectItem>
-                      <SelectItem value="消费者权益">消费者权益</SelectItem>
-                      <SelectItem value="数据安全">数据安全</SelectItem>
-                      <SelectItem value="信息披露">信息披露</SelectItem>
-                      <SelectItem value="从业人员">从业人员</SelectItem>
-                      <SelectItem value="市场操纵">市场操纵</SelectItem>
-                      <SelectItem value="其他违法">其他违法</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+            {/* Date Range in Separate Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">发布日期范围</label>
+                <DateRange
+                  start={startDate}
+                  end={endDate}
+                  onChange={(s, e) => { setStartDate(s); setEndDate(e); }}
+                  disabled={loading}
+                />
               </div>
-            </div>
-
-            {/* Date and Amount Filters */}
-            <div>
-              <h4 className="text-sm font-medium mb-3 text-muted-foreground">日期与金额</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">发布日期</label>
-                  <DateRange
-                    start={startDate}
-                    end={endDate}
-                    onChange={(s, e) => { setStartDate(s); setEndDate(e); }}
-                    disabled={loading}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">罚款金额范围</label>
-                  <div className="flex items-center gap-2">
-                    <Input type="number" placeholder="最小金额" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} />
-                    <span className="text-sm text-muted-foreground">至</span>
-                    <Input type="number" placeholder="最大金额" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Search Templates */}
-            <div>
-              <h4 className="text-sm font-medium mb-3 text-muted-foreground">快速搜索模板</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setViolationType("反洗钱"); setPage(1); fetchCases(); }}
-                  className="text-xs"
+              <div className="flex items-end gap-2">
+                <Button 
+                  variant="default" 
+                  onClick={() => performAdvancedSearch()} 
+                  disabled={loading || !hasAdvancedFilters()} 
+                  className={`flex-1 transition-all duration-200 ${
+                    hasAdvancedFilters() 
+                      ? "bg-green-600 hover:bg-green-700 text-white shadow-md" 
+                      : "bg-gray-300 hover:bg-gray-400 text-gray-500 cursor-not-allowed"
+                  }`}
                 >
-                  反洗钱违法
+                  应用筛选
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setIndustry("银行业"); setMinAmount("100000"); setPage(1); fetchCases(); }}
-                  className="text-xs"
-                >
-                  银行业重大处罚
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setViolationType("内控"); setPage(1); fetchCases(); }}
-                  className="text-xs"
-                >
-                  内控管理违规
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setCategory("消费者权益"); setPage(1); fetchCases(); }}
-                  className="text-xs"
-                >
-                  消费者权益
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setIndustry("保险业"); setPage(1); fetchCases(); }}
-                  className="text-xs"
-                >
-                  保险业处罚
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setViolationType("数据"); setPage(1); fetchCases(); }}
-                  className="text-xs"
-                >
-                  数据安全违规
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setMinAmount("1000000"); setPage(1); fetchCases(); }}
-                  className="text-xs"
-                >
-                  百万以上处罚
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const thirtyDaysAgo = new Date();
-                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                    setStartDate(thirtyDaysAgo.toISOString().split('T')[0]);
-                    setEndDate(new Date().toISOString().split('T')[0]);
-                    setPage(1);
-                    fetchCases();
-                  }}
-                  className="text-xs"
-                >
-                  近期案例
-                </Button>
-              </div>
-            </div>
-
-            {/* Display Options and Actions */}
-            <div>
-              <h4 className="text-sm font-medium mb-3 text-muted-foreground">显示设置</h4>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">每页显示</label>
-                    <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="10">10 条</SelectItem>
-                        <SelectItem value="20">20 条</SelectItem>
-                        <SelectItem value="50">50 条</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="secondary" onClick={() => { setPage(1); fetchCases(); }} disabled={loading}>
-                    应用筛选
+                {keyword && hasAdvancedFilters() && (
+                  <Button 
+                    variant="secondary" 
+                    onClick={() => performCombinedSearch()} 
+                    disabled={loading} 
+                    className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
+                  >
+                    组合搜索
                   </Button>
-                  <Button variant="outline" onClick={() => {
+                )}
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
                     setKeyword("");
                     setDocNo("");
                     setEntityName("");
@@ -456,11 +426,27 @@ export default function CasesPage() {
                     setMinAmount("");
                     setMaxAmount("");
                     setPage(1);
-                  }}>
-                    清除筛选
-                  </Button>
-                </div>
+                  }} 
+                  className="flex-1 border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
+                >
+                  清除全部
+                </Button>
               </div>
+            </div>
+            
+            {/* Help Text */}
+            <div className="text-xs text-muted-foreground bg-muted/30 rounded p-2 mt-2">
+              <strong>使用说明：</strong>
+              <ul className="list-disc list-inside mt-1 space-y-1">
+                <li><strong>关键词搜索：</strong>在上方输入关键词后点击"搜索"，会清除高级筛选条件</li>
+                <li><strong>高级筛选：</strong>填写筛选条件后点击"应用筛选"，会清除关键词</li>
+                <li><strong>组合搜索：</strong>同时有关键词和筛选条件时，点击"组合搜索"使用全部条件</li>
+              </ul>
+              {!hasAdvancedFilters() && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-blue-700">
+                  💡 <strong>提示：</strong>请先填写上方任意筛选条件，"应用筛选"按钮将变为可点击状态
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -495,9 +481,8 @@ export default function CasesPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-32">处罚文号</TableHead>
-                    <TableHead className="min-w-[200px]">企业信息</TableHead>
-                    <TableHead className="w-40">违法类型</TableHead>
+                    <TableHead className="w-36">处罚文号</TableHead>
+                    <TableHead className="min-w-[200px] max-w-[250px]">企业信息</TableHead>
                     <TableHead className="w-32">地区</TableHead>
                     <TableHead className="w-32">罚款金额</TableHead>
                     <TableHead className="w-28">发布日期</TableHead>
@@ -515,17 +500,24 @@ export default function CasesPage() {
                         {it.doc_no || "-"}
                       </TableCell>
                       <TableCell>
-                        <div className="space-y-1">
-                          <div className="font-medium text-sm line-clamp-2">{it.entity_name || "-"}</div>
-                          {(it.category || it.penalty_content || it.title) && (
-                            <div className="text-xs text-muted-foreground line-clamp-2 bg-muted/30 rounded px-2 py-1">
-                              {it.category || it.penalty_content || it.title}
+                        <div className="space-y-2">
+                          <div className="font-medium text-sm line-clamp-1">{it.entity_name || "-"}</div>
+                          {it.violation_type && (
+                            <div className="text-xs text-blue-200 line-clamp-2 bg-blue-900/30 border border-blue-700/50 rounded-md px-3 py-2">
+                              <span className="font-semibold text-blue-100">案情：</span>{it.violation_type}
+                            </div>
+                          )}
+                          {it.penalty_content && (
+                            <div className="text-xs text-rose-200 line-clamp-2 bg-rose-900/30 border border-rose-700/50 rounded-md px-3 py-2">
+                              <span className="font-semibold text-rose-100">处罚：</span>{it.penalty_content}
+                            </div>
+                          )}
+                          {(it.category || it.title) && (
+                            <div className="text-xs text-slate-300 line-clamp-1 bg-slate-800/40 border border-slate-600/50 rounded-md px-3 py-1">
+                              {it.category || it.title}
                             </div>
                           )}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm line-clamp-3">{it.violation_type || "-"}</div>
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">
@@ -564,14 +556,14 @@ export default function CasesPage() {
                   ))}
                   {items.length === 0 && !loading && (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                         暂无数据，请尝试搜索或调整筛选条件
                       </TableCell>
                     </TableRow>
                   )}
                   {loading && (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                         搜索中...
                       </TableCell>
                     </TableRow>
@@ -591,7 +583,7 @@ export default function CasesPage() {
                     variant="outline"
                     size="sm"
                     disabled={page <= 1 || loading}
-                    onClick={() => { setPage(1); setTimeout(fetchCases, 0); }}
+                    onClick={() => { setPage(1); setTimeout(performPaginationSearch, 0); }}
                   >
                     首页
                   </Button>
@@ -599,7 +591,7 @@ export default function CasesPage() {
                     variant="outline"
                     size="sm"
                     disabled={page <= 1 || loading}
-                    onClick={() => { setPage((p) => Math.max(1, p - 1)); setTimeout(fetchCases, 0); }}
+                    onClick={() => { setPage((p) => Math.max(1, p - 1)); setTimeout(performPaginationSearch, 0); }}
                   >
                     上一页
                   </Button>
@@ -607,7 +599,7 @@ export default function CasesPage() {
                     variant="outline"
                     size="sm"
                     disabled={page >= totalPages || loading}
-                    onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); setTimeout(fetchCases, 0); }}
+                    onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); setTimeout(performPaginationSearch, 0); }}
                   >
                     下一页
                   </Button>
@@ -615,7 +607,7 @@ export default function CasesPage() {
                     variant="outline"
                     size="sm"
                     disabled={page >= totalPages || loading}
-                    onClick={() => { setPage(totalPages); setTimeout(fetchCases, 0); }}
+                    onClick={() => { setPage(totalPages); setTimeout(performPaginationSearch, 0); }}
                   >
                     末页
                   </Button>
@@ -627,52 +619,49 @@ export default function CasesPage() {
 
         {/* Case Details Dialog */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="max-w-7xl w-full max-h-[95vh] overflow-y-auto bg-white dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 shadow-2xl">
-            <DialogHeader className="pb-3 border-b border-gray-200 dark:border-gray-700">
-              <DialogTitle className="text-xl font-bold text-gray-900 dark:text-gray-100">案例详情</DialogTitle>
-              <DialogDescription className="text-sm text-gray-600 dark:text-gray-400">
+          <DialogContent className="w-[95vw] sm:!max-w-7xl xl:!max-w-[84rem] max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-900">
+            <DialogHeader className="pb-4 border-b">
+              <DialogTitle className="text-xl font-bold">案例详情</DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground">
                 查看完整的处罚案例信息
               </DialogDescription>
             </DialogHeader>
 
             {selectedCase && (
-              <div className="space-y-4 pt-4">
-                {/* Basic Information - Compact Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="space-y-6 pt-4">
+                {/* Basic Information Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div>
-                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">处罚文号</label>
-                    <div className="p-2 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-sm font-mono text-gray-900 dark:text-gray-100">
+                    <label className="text-sm font-medium text-foreground mb-2 block">处罚文号</label>
+                    <div className="p-3 bg-muted rounded-md text-sm font-mono">
                       {selectedCase.doc_no || "未提供"}
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">当事人</label>
-                    <div className="p-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-600 rounded text-sm text-blue-900 dark:text-blue-100 font-medium">
+                    <label className="text-sm font-medium text-foreground mb-2 block">当事人</label>
+                    <div className="p-3 bg-muted rounded-md text-sm font-medium">
                       {selectedCase.entity_name || "未提供"}
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">处罚区域</label>
-                    <div className="p-2 bg-green-50 dark:bg-green-900/30 border border-green-300 dark:border-green-600 rounded text-sm text-green-900 dark:text-green-100">
+                    <label className="text-sm font-medium text-foreground mb-2 block">处罚区域</label>
+                    <div className="p-3 bg-muted rounded-md text-sm">
                       {[selectedCase.province, selectedCase.region].filter(Boolean).join(" - ") || "未提供"}
                     </div>
                   </div>
-                </div>
 
-                {/* Secondary Information */}
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                   <div>
-                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">处罚机关</label>
-                    <div className="p-2 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-sm text-gray-900 dark:text-gray-100">
+                    <label className="text-sm font-medium text-foreground mb-2 block">处罚机关</label>
+                    <div className="p-3 bg-muted rounded-md text-sm">
                       {selectedCase.agency || "未提供"}
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">罚款金额</label>
-                    <div className="p-2 bg-red-100 dark:bg-red-900/40 border border-red-400 dark:border-red-500 rounded text-sm font-bold text-red-800 dark:text-red-200">
+                    <label className="text-sm font-medium text-foreground mb-2 block">罚款金额</label>
+                    <div className="p-3 bg-muted rounded-md text-sm font-bold text-red-600">
                       {typeof selectedCase.amount_num === 'number'
                         ? `¥${selectedCase.amount_num.toLocaleString()}`
                         : (selectedCase.amount ? `¥${selectedCase.amount}` : "未提供")
@@ -681,16 +670,9 @@ export default function CasesPage() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">发布日期</label>
-                    <div className="p-2 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-sm text-gray-900 dark:text-gray-100">
+                    <label className="text-sm font-medium text-foreground mb-2 block">发布日期</label>
+                    <div className="p-3 bg-muted rounded-md text-sm">
                       {selectedCase.publish_date || selectedCase.decision_date || "未提供"}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">决定日期</label>
-                    <div className="p-2 bg-purple-100 dark:bg-purple-900/40 border border-purple-400 dark:border-purple-500 rounded text-sm text-purple-900 dark:text-purple-100">
-                      {selectedCase.decision_date || "未提供"}
                     </div>
                   </div>
                 </div>
@@ -698,66 +680,66 @@ export default function CasesPage() {
                 {/* Classification Information */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">行业分类</label>
-                    <div className="p-2 bg-blue-100 dark:bg-blue-900/40 border border-blue-400 dark:border-blue-500 rounded text-sm text-blue-900 dark:text-blue-100 font-medium">
+                    <label className="text-sm font-medium text-foreground mb-2 block">行业分类</label>
+                    <div className="p-3 bg-muted rounded-md text-sm">
                       {selectedCase.industry || "未分类"}
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">案例分类</label>
-                    <div className="p-2 bg-green-100 dark:bg-green-900/40 border border-green-400 dark:border-green-500 rounded text-sm text-green-900 dark:text-green-100 font-medium">
+                    <label className="text-sm font-medium text-foreground mb-2 block">案例分类</label>
+                    <div className="p-3 bg-muted rounded-md text-sm">
                       {selectedCase.category || "未分类"}
                     </div>
                   </div>
                 </div>
 
-                {/* Detailed Information - Compact Layout */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Detailed Information */}
+                <div className="space-y-4">
                   <div>
-                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">违法类型</label>
-                    <div className="p-3 bg-orange-50 dark:bg-orange-900/30 border-l-3 border-orange-400 dark:border-orange-500 rounded text-sm leading-relaxed text-orange-900 dark:text-orange-100 max-h-24 overflow-y-auto">
+                    <label className="text-sm font-medium text-foreground mb-2 block">违法类型</label>
+                    <div className="p-4 bg-muted rounded-md text-sm leading-relaxed border-l-4 border-orange-500">
                       {selectedCase.violation_type || "未提供"}
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">处罚内容</label>
-                    <div className="p-3 bg-red-50 dark:bg-red-900/30 border-l-3 border-red-400 dark:border-red-500 rounded text-sm leading-relaxed text-red-900 dark:text-red-100 max-h-24 overflow-y-auto">
+                    <label className="text-sm font-medium text-foreground mb-2 block">处罚内容</label>
+                    <div className="p-4 bg-muted rounded-md text-sm leading-relaxed border-l-4 border-red-500">
                       {selectedCase.penalty_content || "未提供"}
                     </div>
                   </div>
+
+                  {selectedCase.title && (
+                    <div>
+                      <label className="text-sm font-medium text-foreground mb-2 block">案例标题</label>
+                      <div className="p-4 bg-muted rounded-md text-sm leading-relaxed border-l-4 border-blue-500">
+                        {selectedCase.title}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {selectedCase.title && (
-                  <div>
-                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 block">案例标题</label>
-                    <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 border-l-3 border-indigo-400 dark:border-indigo-500 rounded text-sm leading-relaxed text-indigo-900 dark:text-indigo-100 font-medium">
-                      {selectedCase.title}
-                    </div>
-                  </div>
-                )}
-
                 {/* Footer Actions */}
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-3 mt-4">
+                <div className="border-t pt-4 mt-6">
                   <div className="flex items-center justify-between">
                     <div>
                       {selectedCase.uid && (
-                        <div className="text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-3 py-1 rounded-full border border-gray-300 dark:border-gray-600">
+                        <div className="text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full">
                           ID: {selectedCase.uid}
                         </div>
                       )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-3">
                       {selectedCase.link && (
-                        <Button asChild variant="outline" size="sm" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-900/20">
+                        <Button asChild variant="outline" size="sm">
                           <a href={selectedCase.link} target="_blank" rel="noreferrer">
-                            <ExternalLink className="h-3 w-3 mr-1" />
+                            <ExternalLink className="h-4 w-4 mr-2" />
                             查看原文
                           </a>
                         </Button>
                       )}
-                      <Button onClick={handleCloseDialog} variant="default" size="sm" className="text-xs px-4 bg-gray-600 hover:bg-gray-700 text-white">
+                      <Button onClick={handleCloseDialog} variant="default" size="sm">
                         关闭
                       </Button>
                     </div>
