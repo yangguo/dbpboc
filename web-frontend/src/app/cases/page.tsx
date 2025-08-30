@@ -489,7 +489,7 @@ export default function CasesPage() {
                 </TableHeader>
                 <TableBody>
                   {items.map((it, idx) => (
-                    <TableRow key={`${it.uid || it.doc_no || it.link || idx}`}>
+                    <TableRow key={`${it.uid || it.doc_no || it.link}-${idx}`}>
                       <TableCell className="font-mono text-xs">
                         {it.doc_no || "-"}
                       </TableCell>

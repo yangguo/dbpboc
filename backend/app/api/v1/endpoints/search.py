@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
+from typing import Optional, Tuple, Dict, Any
 import pandas as pd
 import glob
 import os
@@ -11,6 +11,15 @@ logger = logging.getLogger(__name__)
 
 # Local PBOC CSV root (relative to backend/)
 PBOC_DATA_PATH = "../pboc"
+
+
+# Simple in-process cache for the joined dataset
+_DATA_CACHE: Dict[str, Any] = {
+    "df": None,          # Cached DataFrame
+    "etag": None,        # Files mtime signature
+    "ts": 0.0,           # Built timestamp
+}
+_CACHE_TTL_SECONDS = 300  # skip filesystem etag checks within this window
 
 
 def _read_csvs(folder: str, prefix: str, debug: list | None = None) -> pd.DataFrame:
@@ -71,17 +80,36 @@ def _load_joined_dataset(debug: list | None = None) -> pd.DataFrame:
             debug.append(msg)
             logger.info(msg)
 
-    # Join -> cat on link/id
-    if not cat_df.empty and {"id"}.issubset(cat_df.columns):
-        cat_cols = [c for c in ["amount", "category", "province", "industry", "id"] if c in cat_df.columns]
-        cat_sub = cat_df[cat_cols].drop_duplicates()
-        t0 = time.time()
-        merged = merged.merge(cat_sub, left_on="link", right_on="id", how="left")
-        t1 = time.time()
-        if debug is not None:
-            msg = f"merge(...<-cat) rows: {len(merged)} time: {t1 - t0:.2f}s"
-            debug.append(msg)
-            logger.info(msg)
+    # Join -> cat, prefer uid join; fallback to link=id
+    if not cat_df.empty:
+        # Preferred: join on uid if present in both
+        if {"uid"}.issubset(cat_df.columns) and {"uid"}.issubset(merged.columns):
+            cat_cols = [c for c in ["amount", "category", "province", "industry", "uid"] if c in cat_df.columns]
+            cat_sub = cat_df[cat_cols].copy()
+            # Ensure unique by uid to avoid one-to-many expansion
+            before = len(cat_sub)
+            cat_sub = cat_sub.sort_values(["uid"]).drop_duplicates(subset=["uid"], keep="first")
+            t0 = time.time()
+            merged = merged.merge(cat_sub, on="uid", how="left", suffixes=("", "_cat"))
+            t1 = time.time()
+            if debug is not None:
+                msg = f"merge(dtl<-cat by uid) rows: {len(merged)} time: {t1 - t0:.2f}s (cat unique: {before}->{len(cat_sub)})"
+                debug.append(msg)
+                logger.info(msg)
+        # Fallback: join on link=id if uid missing on either side
+        elif {"id"}.issubset(cat_df.columns) and {"link"}.issubset(merged.columns):
+            cat_cols = [c for c in ["amount", "category", "province", "industry", "id"] if c in cat_df.columns]
+            cat_sub = cat_df[cat_cols].copy()
+            # Ensure unique by id to avoid one-to-many expansion
+            before = len(cat_sub)
+            cat_sub = cat_sub.sort_values(["id"]).drop_duplicates(subset=["id"], keep="first")
+            t0 = time.time()
+            merged = merged.merge(cat_sub, left_on="link", right_on="id", how="left")
+            t1 = time.time()
+            if debug is not None:
+                msg = f"merge(dtl<-cat by link=id) rows: {len(merged)} time: {t1 - t0:.2f}s (cat unique: {before}->{len(cat_sub)})"
+                debug.append(msg)
+                logger.info(msg)
 
     # Normalize dates and amounts
     if "date" in merged.columns:
@@ -101,9 +129,87 @@ def _load_joined_dataset(debug: list | None = None) -> pd.DataFrame:
     return merged
 
 
+def _compute_files_etag() -> Tuple[int, int]:
+    """Compute an etag from the newest mtime and file count of matching CSVs.
+
+    Returns (max_mtime, file_count). If no files, returns (0, 0).
+    """
+    patterns = [
+        os.path.join(PBOC_DATA_PATH, "**", "pbocsum*.csv"),
+        os.path.join(PBOC_DATA_PATH, "**", "pbocdtl*.csv"),
+        os.path.join(PBOC_DATA_PATH, "**", "pboccat*.csv"),
+    ]
+    files: list[str] = []
+    for pat in patterns:
+        files.extend(glob.glob(pat, recursive=True))
+    if not files:
+        return (0, 0)
+    try:
+        mtimes = [int(os.path.getmtime(fp)) for fp in files]
+        return (max(mtimes), len(files))
+    except Exception:
+        # If any issue, fall back to time-based invalidation
+        return (0, len(files))
+
+
+def _get_joined_dataset_cached(debug: list | None = None, force_reload: bool = False) -> pd.DataFrame:
+    """Return cached joined dataset, reloading if files changed or forced.
+
+    Also prepares helper columns once (e.g., parsed publish date) to avoid
+    recomputation on every request.
+    """
+    now = time.time()
+    # If we have a cached df and it's fresh, return immediately (no glob)
+    if (not force_reload) and _DATA_CACHE.get("df") is not None and (now - float(_DATA_CACHE.get("ts") or 0)) < _CACHE_TTL_SECONDS:
+        return _DATA_CACHE["df"]  # type: ignore
+
+    # Otherwise, compute filesystem etag and compare
+    current_etag = _compute_files_etag()
+    cached_etag = _DATA_CACHE.get("etag")
+    if (not force_reload) and _DATA_CACHE.get("df") is not None and cached_etag == current_etag:
+        # Refresh timestamp and reuse df
+        _DATA_CACHE["ts"] = now
+        return _DATA_CACHE["df"]  # type: ignore
+
+    # (Re)load
+    if debug is not None:
+        logger.info("cache miss or force reload; loading dataset")
+        debug.append("cache: reload dataset")  # type: ignore
+    df = _load_joined_dataset(debug)
+
+    # Build helper columns once
+    if not df.empty:
+        if "publish_date" in df.columns:
+            df["_pub"] = pd.to_datetime(df["publish_date"], errors="coerce")
+        # Precompute a lowercase search blob for fast keyword search
+        cols = [
+            c for c in ["企业名称", "违法行为类型", "行政处罚内容", "处罚决定书文号", "category", "name"] if c in df.columns
+        ]
+        if cols:
+            try:
+                blob = pd.Series([""] * len(df))
+                for c in cols:
+                    blob = blob.str.cat(df[c].astype(str).str.lower().fillna(""), sep="\n")
+                df["_blob"] = blob
+            except Exception:
+                # Fallback: if anything fails, skip blob precompute
+                pass
+        if "企业名称" in df.columns:
+            try:
+                df["_entity_lc"] = df["企业名称"].astype(str).str.lower()
+            except Exception:
+                pass
+
+    _DATA_CACHE["df"] = df
+    _DATA_CACHE["etag"] = current_etag
+    _DATA_CACHE["ts"] = now
+    return df
+
+
 @router.get("/cases")
 def search_cases(
     q: Optional[str] = Query(None, description="关键词：企业名称/违法类型/处罚内容/文号/分类/标题"),
+    entity_name: Optional[str] = Query(None, description="企业名称（精确或模糊匹配）"),
     region: Optional[str] = Query(None, description="区域（sum.区域）"),
     province: Optional[str] = Query(None, description="省份（cat.province）"),
     industry: Optional[str] = Query(None, description="行业（cat.industry）"),
@@ -114,6 +220,7 @@ def search_cases(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     verbose: bool = Query(False, description="是否返回调试日志"),
+    force_reload: bool = Query(False, description="强制刷新数据缓存"),
 ):
     try:
         debug: list[str] = [] if verbose else None  # type: ignore
@@ -123,7 +230,8 @@ def search_cases(
             debug.append(msg)  # type: ignore
             logger.info(msg)
 
-        df = _load_joined_dataset(debug)
+        # Use cached dataset to avoid re-reading CSVs on every request
+        df = _get_joined_dataset_cached(debug=debug, force_reload=force_reload)
         if df.empty:
             resp = {
                 "total": 0,
@@ -142,25 +250,41 @@ def search_cases(
         if verbose:
             debug.append(f"initial rows: {len(df)}")  # type: ignore
 
+        # If entity_name provided but q not, treat as keyword too
+        if entity_name and not q:
+            q = entity_name
+
         if q:
             q_lower = q.lower()
-            cols = [
-                col for col in [
-                    "企业名称",
-                    "违法行为类型",
-                    "行政处罚内容",
-                    "处罚决定书文号",
-                    "category",
-                    "name",  # sum title
-                ] if col in df.columns
-            ]
-            if cols:
-                any_match = pd.Series([False] * len(df))
-                for c in cols:
-                    any_match = any_match | df[c].astype(str).str.lower().str.contains(q_lower, na=False)
-                mask = mask & any_match
-                if verbose:
-                    debug.append(f"after keyword filter rows: {int(mask.sum())}")  # type: ignore
+            if "_blob" in df.columns:
+                mask = mask & df["_blob"].str.contains(q_lower, na=False)
+            else:
+                cols = [
+                    col for col in [
+                        "企业名称",
+                        "违法行为类型",
+                        "行政处罚内容",
+                        "处罚决定书文号",
+                        "category",
+                        "name",  # sum title
+                    ] if col in df.columns
+                ]
+                if cols:
+                    any_match = pd.Series([False] * len(df))
+                    for c in cols:
+                        any_match = any_match | df[c].astype(str).str.contains(q, na=False, case=False)
+                    mask = mask & any_match
+            if verbose:
+                debug.append(f"after keyword filter rows: {int(mask.sum())}")  # type: ignore
+
+        # Dedicated filter on 企业名称 if specified (applied in addition to q)
+        if entity_name and "企业名称" in df.columns:
+            if "_entity_lc" in df.columns:
+                mask = mask & df["_entity_lc"].str.contains(entity_name.lower(), na=False)
+            else:
+                mask = mask & df["企业名称"].astype(str).str.contains(entity_name, na=False, case=False)
+            if verbose:
+                debug.append(f"after entity_name filter rows: {int(mask.sum())}")  # type: ignore
 
         if region and "区域" in df.columns:
             mask = mask & (df["区域"].astype(str) == region)
@@ -210,10 +334,18 @@ def search_cases(
         if verbose:
             debug.append(f"filtered rows: {len(filtered)}")  # type: ignore
 
-        # Sort by publish_date desc then amount desc
-        if "publish_date" in filtered.columns:
-            filtered["_pub"] = pd.to_datetime(filtered["publish_date"], errors="coerce")
+        # Sort by publish_date desc then amount desc (use cached parsed column if available)
+        if "_pub" in filtered.columns or "publish_date" in filtered.columns:
+            if "_pub" not in filtered.columns:
+                filtered["_pub"] = pd.to_datetime(filtered["publish_date"], errors="coerce")
             filtered.sort_values(["_pub", "amount_num"], ascending=[False, False], inplace=True)
+
+        # Strictly de-duplicate by pbocdtl uid
+        if "uid" in filtered.columns:
+            before = len(filtered)
+            filtered = filtered.drop_duplicates(subset=["uid"], keep="first")
+            if verbose and before != len(filtered):
+                debug.append(f"deduplicated by uid: {before} -> {len(filtered)}")  # type: ignore
         else:
             filtered.sort_values(by="link", inplace=True)
 
