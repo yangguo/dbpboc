@@ -1035,9 +1035,20 @@ def download_pbocsum():
     # get unique link number
     linkno = allsum["link"].nunique()
     st.write("链接数: " + str(linkno))
-    # get min and max date
-    mindate = allsum["date"].min()
-    maxdate = allsum["date"].max()
+    # get min and max date using normalized 发布日期 when available
+    if not allsum.empty and "发布日期" in allsum.columns and allsum["发布日期"].notna().any():
+        min_dt = allsum["发布日期"].min()
+        max_dt = allsum["发布日期"].max()
+        mindate = min_dt.strftime("%Y-%m-%d")
+        maxdate = max_dt.strftime("%Y-%m-%d")
+    else:
+        # fallback to coercing date column
+        dates = pd.to_datetime(allsum.get("date"), errors="coerce")
+        if dates.notna().any():
+            mindate = dates.min().strftime("%Y-%m-%d")
+            maxdate = dates.max().strftime("%Y-%m-%d")
+        else:
+            mindate = maxdate = "N/A"
     st.write("列表日期: " + maxdate + " - " + mindate)
 
     # listname
@@ -1057,9 +1068,19 @@ def download_pbocsum():
     # get unique uid
     idno = alldtl["uid"].nunique()
     st.write("uid数: " + str(idno))
-    # get min and max date
-    mindate = alldtl["date"].min()
-    maxdate = alldtl["date"].max()
+    # get min and max date using normalized 发布日期 when available
+    if not alldtl.empty and "发布日期" in alldtl.columns and alldtl["发布日期"].notna().any():
+        min_dt = alldtl["发布日期"].min()
+        max_dt = alldtl["发布日期"].max()
+        mindate = min_dt.strftime("%Y-%m-%d")
+        maxdate = max_dt.strftime("%Y-%m-%d")
+    else:
+        dates = pd.to_datetime(alldtl.get("date"), errors="coerce")
+        if dates.notna().any():
+            mindate = dates.min().strftime("%Y-%m-%d")
+            maxdate = dates.max().strftime("%Y-%m-%d")
+        else:
+            mindate = maxdate = "N/A"
     st.write("详情日期: " + maxdate + " - " + mindate)
 
     # detailname
@@ -1379,9 +1400,19 @@ def uplink_pbocsum():
     oldsum = get_csvdf(penpboc, beginwith)
     lensum = len(oldsum)
     st.write("列表数据量: " + str(lensum))
-    # get min and max date
-    mindate = oldsum["date"].min()
-    maxdate = oldsum["date"].max()
+    # get min and max date: always coerce to datetime to avoid mixed types
+    if not oldsum.empty:
+        base_series = (
+            oldsum["发布日期"] if "发布日期" in oldsum.columns else oldsum.get("date")
+        )
+        dates = pd.to_datetime(base_series, errors="coerce") if base_series is not None else pd.Series([], dtype="datetime64[ns]")
+        if dates.notna().any():
+            mindate = dates.min().strftime("%Y-%m-%d")
+            maxdate = dates.max().strftime("%Y-%m-%d")
+        else:
+            mindate = maxdate = "N/A"
+    else:
+        mindate = maxdate = "N/A"
     st.write("列表日期: " + maxdate + " - " + mindate)
 
     beginwith = "pbocdtl"
@@ -1389,9 +1420,19 @@ def uplink_pbocsum():
     # dtl["区域"] = orgname
     lendtl = len(dtl)
     st.write("详情数据量: " + str(lendtl))
-    # get min and max date
-    mindate = dtl["date"].min()
-    maxdate = dtl["date"].max()
+    # get min and max date: always coerce to datetime to avoid mixed types
+    if not dtl.empty:
+        base_series = (
+            dtl["发布日期"] if "发布日期" in dtl.columns else dtl.get("date")
+        )
+        dates = pd.to_datetime(base_series, errors="coerce") if base_series is not None else pd.Series([], dtype="datetime64[ns]")
+        if dates.notna().any():
+            mindate = dates.min().strftime("%Y-%m-%d")
+            maxdate = dates.max().strftime("%Y-%m-%d")
+        else:
+            mindate = maxdate = "N/A"
+    else:
+        mindate = maxdate = "N/A"
     st.write("详情日期: " + maxdate + " - " + mindate)
 
     # listname
