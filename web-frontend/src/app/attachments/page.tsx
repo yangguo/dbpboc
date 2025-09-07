@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useApiCallDeduplication } from "@/hooks/useDebounce";
 import { MainLayout } from "@/components/layout/main-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -106,13 +107,16 @@ export default function AttachmentsPage() {
   const cleanupScheduledRef = useRef<boolean>(false);
 
   // API functions
-  const fetchOrganizations = async (): Promise<string[]> => {
+  const fetchOrganizationsInternal = async (): Promise<string[]> => {
     const response = await fetch(`${config.backendUrl}/api/v1/attachments/organizations`);
     if (!response.ok) {
       throw new Error('Failed to fetch organizations');
     }
     return response.json();
   };
+
+  // 使用防重复调用的hook
+  const fetchOrganizations = useApiCallDeduplication(fetchOrganizationsInternal, 'fetchOrganizations', 2000);
 
   const fetchAttachmentList = async (orgName: string): Promise<AttachmentItem[]> => {
     const response = await fetch(`${config.backendUrl}/api/v1/attachments/download-list/${encodeURIComponent(orgName)}`);

@@ -91,11 +91,14 @@ export default function UpdatePage() {
     };
 
     selectedOrgs.forEach(org => {
-      if (!orgStats[org]) {
-        fetchOrgStats(org);
-      }
+      setOrgStats(prev => {
+        if (!prev[org]) {
+          fetchOrgStats(org);
+        }
+        return prev;
+      });
     });
-  }, [selectedOrgs, orgStats]);
+  }, [selectedOrgs]);
 
   // 处理机构选择
   const handleOrgSelection = (org: string, checked: boolean) => {

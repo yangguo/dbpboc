@@ -17,8 +17,8 @@ class Settings(BaseSettings):
     
     # Database
     MONGODB_URL: str = "mongodb://localhost:27017"
-    MONGO_DB_URL: str = "mongodb://localhost:27017"  # Alternative name used in .env
-    DATABASE_NAME: str = "pboc_cases"
+    MONGODB_DB: str = "penpboc"
+    MONGODB_COLLECTION: str = "pbocdtl"
     
     # OpenAI Settings (for existing functionality)
     OPENAI_MODEL: str = "gpt-3.5-turbo"

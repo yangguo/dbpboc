@@ -12,7 +12,8 @@ import {
   X,
   BarChart3,
   RefreshCw,
-  Download
+  Download,
+  Upload
 } from "lucide-react";
 
 const navigation = [
@@ -64,6 +65,11 @@ const navigation = [
     name: "案例下载",
     href: "/downloads",
     icon: Download,
+  },
+  {
+    name: "案例上线",
+    href: "/uplink",
+    icon: Upload,
   },
   {
     name: "数据分析",

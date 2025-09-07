@@ -17,7 +17,7 @@ async def connect_to_mongo():
     """Create database connection"""
     try:
         db.client = AsyncIOMotorClient(settings.MONGODB_URL)
-        db.database = db.client[settings.DATABASE_NAME]
+        db.database = db.client[settings.MONGODB_DB]
         
         # Test the connection
         await db.client.admin.command('ping')

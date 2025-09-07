@@ -1,0 +1,252 @@
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
+from typing import List, Dict, Any, Optional
+import pandas as pd
+import glob
+import os
+import re
+from datetime import datetime
+
+from app.core.config import settings
+from app.core.database import db, get_database, connect_to_mongo
+
+router = APIRouter()
+
+# Local PBOC CSV root (relative to backend/)
+PBOC_DATA_PATH = "../pboc"
+
+
+async def _ensure_db():
+    if db.database is None:
+        try:
+            await connect_to_mongo()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"MongoDB连接失败: {e}")
+
+
+def _read_csvs(folder: str, prefix: str) -> pd.DataFrame:
+    files = glob.glob(os.path.join(folder, "**", f"{prefix}*.csv"), recursive=True)
+    frames: List[pd.DataFrame] = []
+    for fp in files:
+        try:
+            df = pd.read_csv(fp, index_col=0, dtype=str, low_memory=False)
+            frames.append(df)
+        except Exception:
+            continue
+    if not frames:
+        return pd.DataFrame()
+    out = pd.concat(frames, ignore_index=True)
+    return out
+
+
+def _build_dtllink_df() -> pd.DataFrame:
+    """Mirror legacy uplink shaping: select columns, strip spaces, add 发布日期 from date."""
+    dtl = _read_csvs(PBOC_DATA_PATH, "pbocdtl")
+    if dtl.empty:
+        return pd.DataFrame()
+    cols = [
+        "企业名称",
+        "处罚决定书文号",
+        "违法行为类型",
+        "行政处罚内容",
+        "作出行政处罚决定机关名称",
+        "作出行政处罚决定日期",
+        "备注",
+        "区域",
+        "link",
+        "name",
+        "date",
+    ]
+    # Intersect available columns
+    available = [c for c in cols if c in dtl.columns]
+    dtllink = dtl[available].copy()
+    # 统一 文号列为字符串
+    if "处罚决定书文号" in dtllink.columns:
+        dtllink.loc[:, "处罚决定书文号"] = dtllink["处罚决定书文号"].astype(str)
+    # 去掉空白
+    dtllink = dtllink.map(lambda x: re.sub(r"\s+", "", x) if isinstance(x, str) else x)
+    # 发布日期
+    if "date" in dtllink.columns:
+        try:
+            dtllink["发布日期"] = pd.to_datetime(dtllink["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+        except Exception:
+            dtllink["发布日期"] = None
+    return dtllink
+
+
+def _stats_for_df(df: pd.DataFrame) -> Dict[str, Any]:
+    if df is None or df.empty:
+        return {"total_cases": 0, "link_count": 0, "uid_count": 0, "min_date": None, "max_date": None}
+    total = len(df)
+    link_count = df["link"].nunique() if "link" in df.columns else 0
+    uid_count = df["uid"].nunique() if "uid" in df.columns else 0
+    min_date = None
+    max_date = None
+    for c in ["发布日期", "date", "publish_date"]:
+        if c in df.columns:
+            ser = pd.to_datetime(df[c], errors="coerce")
+            if ser.notna().any():
+                min_date = str(ser.min().date())
+                max_date = str(ser.max().date())
+                break
+    return {"total_cases": total, "link_count": link_count, "uid_count": uid_count, "min_date": min_date, "max_date": max_date}
+
+
+def _stats_for_cat(df_cat: pd.DataFrame, df_sum: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+    """Compute stats for pboccat.
+
+    - total_cases: rows in cat
+    - link_count: unique id/link/url count (prefer 'id', then 'link', then 'url')
+    - min/max date: derived by joining to sum on link to use 发布日期/date when available
+    """
+    if df_cat is None or df_cat.empty:
+        return {"total_cases": 0, "link_count": 0, "uid_count": 0, "min_date": None, "max_date": None}
+
+    # Determine identifier column in cat
+    link_col: Optional[str] = None
+    for c in ["id", "link", "url"]:
+        if c in df_cat.columns:
+            link_col = c
+            break
+
+    total = len(df_cat)
+    id_count = 0
+    uid_count = 0
+    if link_col is not None:
+        try:
+            id_count = df_cat[link_col].dropna().nunique()
+        except Exception:
+            id_count = 0
+
+    # uid unique
+    try:
+        if "uid" in df_cat.columns:
+            uid_count = int(df_cat["uid"].dropna().nunique())
+    except Exception:
+        uid_count = 0
+
+    min_date = None
+    max_date = None
+    try:
+        if df_sum is not None and not df_sum.empty and link_col is not None and "link" in df_sum.columns:
+            join_cols = [c for c in ["link", "区域", "date", "发布日期"] if c in df_sum.columns]
+            sum_min = df_sum[join_cols].drop_duplicates()
+            merged = df_cat.merge(sum_min, how="left", left_on=link_col, right_on="link")
+            # compute date range preferring 发布日期 then date
+            for c in ["发布日期", "date", "publish_date"]:
+                if c in merged.columns:
+                    ser = pd.to_datetime(merged[c], errors="coerce")
+                    if ser.notna().any():
+                        min_date = str(ser.min().date())
+                        max_date = str(ser.max().date())
+                        break
+    except Exception:
+        # keep None if any error
+        pass
+    return {"total_cases": total, "link_count": int(id_count), "uid_count": uid_count, "min_date": min_date, "max_date": max_date}
+
+
+@router.get("/info")
+async def uplink_info():
+    """Return CSV dataset stats plus current Mongo collection size and pending update count."""
+    try:
+        sum_df = _read_csvs(PBOC_DATA_PATH, "pbocsum")
+        dtl_df = _read_csvs(PBOC_DATA_PATH, "pbocdtl")
+        cat_df = _read_csvs(PBOC_DATA_PATH, "pboccat")
+        sum_stats = _stats_for_df(sum_df)
+        dtl_stats = _stats_for_df(dtl_df)
+        cat_stats = _stats_for_cat(cat_df, sum_df)
+
+        await _ensure_db()
+        database = await get_database()
+        col = database["pbocdtl"]
+        collection_size = await col.count_documents({})
+
+        # pending by comparing links
+        dtllink = _build_dtllink_df()
+        pending = 0
+        if not dtllink.empty and "link" in dtllink.columns:
+            links = dtllink["link"].dropna().unique().tolist()
+            existing = await col.count_documents({"link": {"$in": links}})
+            pending = max(0, len(links) - int(existing))
+
+        return {
+            "sum": sum_stats,
+            "dtl": dtl_stats,
+            "cat": cat_stats,
+            "collection": {"name": "pbocdtl", "size": collection_size, "pending": pending},
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/export")
+async def uplink_export():
+    """Export current Mongo pbocdtl collection as CSV."""
+    try:
+        await _ensure_db()
+        database = await get_database()
+        col = database["pbocdtl"]
+        docs = []
+        async for d in col.find({}):
+            d.pop("_id", None)
+            docs.append(d)
+        df = pd.DataFrame(docs)
+        csv = df.to_csv(index=False).encode("utf-8") if not df.empty else "".encode()
+        filename = f"uplink_pbocdtl_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+        headers = {"Content-Disposition": f"attachment; filename={filename}"}
+        return Response(content=csv, media_type="text/csv", headers=headers)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("")
+async def uplink_clear():
+    """Delete all documents in pbocdtl collection."""
+    try:
+        await _ensure_db()
+        database = await get_database()
+        col = database["pbocdtl"]
+        res = await col.delete_many({})
+        return {"deleted": res.deleted_count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/update")
+async def uplink_update():
+    """Insert new dtl rows (from CSV) into Mongo pbocdtl by link-dedup."""
+    try:
+        dtllink = _build_dtllink_df()
+        if dtllink.empty:
+            return {"inserted": 0, "skipped": 0}
+
+        await _ensure_db()
+        database = await get_database()
+        col = database["pbocdtl"]
+
+        # existing links
+        links = dtllink["link"].dropna().unique().tolist() if "link" in dtllink.columns else []
+        existing_links: set[str] = set()
+        if links:
+            cursor = col.find({"link": {"$in": links}}, {"link": 1, "_id": 0})
+            async for doc in cursor:
+                if "link" in doc and doc["link"]:
+                    existing_links.add(doc["link"]) 
+
+        # build docs to insert
+        to_insert: List[Dict[str, Any]] = []
+        for _, row in dtllink.iterrows():
+            link = row.get("link")
+            if not link or link in existing_links:
+                continue
+            doc = {k: (None if (pd.isna(v)) else v) for k, v in row.to_dict().items()}
+            to_insert.append(doc)
+
+        inserted = 0
+        if to_insert:
+            res = await col.insert_many(to_insert)
+            inserted = len(res.inserted_ids)
+        return {"inserted": inserted, "skipped": len(links) - inserted}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
