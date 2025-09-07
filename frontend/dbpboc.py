@@ -1083,6 +1083,18 @@ def download_pbocsum():
             mindate = maxdate = "N/A"
     st.write("详情日期: " + maxdate + " - " + mindate)
 
+    # 分类数据统计（紧随详情数据统计）
+    try:
+        st.markdown("#### 分类数据统计")
+        catdf = get_pboccat()
+        lencat = len(catdf)
+        st.write("分类数据量: " + str(lencat))
+        if not catdf.empty and "uid" in catdf.columns:
+            cat_uid_unique = catdf["uid"].nunique()
+            st.write("分类id数: " + str(cat_uid_unique))
+    except Exception as e:
+        st.write("分类数据统计出错: " + str(e))
+
     # detailname
     detailname = "pbocdtlall" + get_now() + ".csv"
     # download detail data
@@ -1400,6 +1412,10 @@ def uplink_pbocsum():
     oldsum = get_csvdf(penpboc, beginwith)
     lensum = len(oldsum)
     st.write("列表数据量: " + str(lensum))
+    # unique link count for list data
+    if not oldsum.empty and "link" in oldsum.columns:
+        sum_link_unique = oldsum["link"].nunique()
+        st.write("列表唯一链接数: " + str(sum_link_unique))
     # get min and max date: always coerce to datetime to avoid mixed types
     if not oldsum.empty:
         base_series = (
@@ -1415,11 +1431,19 @@ def uplink_pbocsum():
         mindate = maxdate = "N/A"
     st.write("列表日期: " + maxdate + " - " + mindate)
 
-    beginwith = "pbocdtl"
-    dtl = get_csvdf(penpboc, beginwith)
+    # 使用与pbocsum关联过的详情数据，确保发布日期来自pbocsum
+    dtl = get_pbocdetail("")
     # dtl["区域"] = orgname
     lendtl = len(dtl)
     st.write("详情数据量: " + str(lendtl))
+    # unique link count for detail data
+    if not dtl.empty and "link" in dtl.columns:
+        dtl_link_unique = dtl["link"].nunique()
+        st.write("详情唯一链接数: " + str(dtl_link_unique))
+    # unique uid count for detail data
+    if not dtl.empty and "uid" in dtl.columns:
+        dtl_uid_unique = dtl["uid"].nunique()
+        st.write("详情唯一uid数: " + str(dtl_uid_unique))
     # get min and max date: always coerce to datetime to avoid mixed types
     if not dtl.empty:
         base_series = (
@@ -1434,6 +1458,14 @@ def uplink_pbocsum():
     else:
         mindate = maxdate = "N/A"
     st.write("详情日期: " + maxdate + " - " + mindate)
+
+    # 分类数据统计（紧随详情数据统计）
+    catdf = get_pboccat()
+    lencat = len(catdf)
+    st.write("分类数据量: " + str(lencat))
+    if not catdf.empty and "uid" in catdf.columns:
+        cat_uid_unique = catdf["uid"].nunique()
+        st.write("分类id数: " + str(cat_uid_unique))
 
     # listname
     # listname = "pbocsum" + get_now() + ".csv"
@@ -1457,6 +1489,7 @@ def uplink_pbocsum():
         "link",
         "name",
         "date",
+        "发布日期",
     ]
     # st.write(dtl.isnull().sum())
     dtllink = dtl[col]
@@ -1467,8 +1500,8 @@ def uplink_pbocsum():
 
     # st.write(dtllink)
 
-    # remove space
-    dtllink = dtllink.applymap(
+    # remove whitespace from all string cells (pandas recommends DataFrame.map)
+    dtllink = dtllink.map(
         lambda x: re.sub(r"\s+", "", x) if isinstance(x, str) else x
     )
 
@@ -1478,13 +1511,17 @@ def uplink_pbocsum():
     # st.download_button(
     #     "下载详情数据", data=dtllink.to_csv().encode("utf_8_sig"), file_name=detailname
     # )
-    # convert date to datetime
-    dtllink["发布日期"] = pd.to_datetime(dtllink["date"])
+    # ensure 发布日期 使用关联后的值，并标准化为datetime
+    if "发布日期" in dtl.columns:
+        dtllink["发布日期"] = pd.to_datetime(dtl["发布日期"], errors="coerce")
+    else:
+        dtllink["发布日期"] = pd.to_datetime(dtllink.get("date"), errors="coerce")
 
     collection = get_collection("penpboc", "pbocdtl")
 
     # display collection size
     collection_size = get_size(collection)
+    st.markdown("#### 上线数据统计")
     st.write("上线数据量: " + str(collection_size))
 
     # get data from mongodb
@@ -1519,6 +1556,8 @@ def uplink_pbocsum():
     if st.button("更新上线数据"):
         insert_data(updf, collection)
         st.success("案例数据上线成功！")
+
+    
 
 
 def toupt_pbocsum(org_name_ls):
