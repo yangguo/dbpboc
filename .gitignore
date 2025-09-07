@@ -12,6 +12,7 @@ build/
 develop-eggs/
 dist/
 downloads/
+!web-frontend/src/app/downloads/
 eggs/
 .eggs/
 lib/
