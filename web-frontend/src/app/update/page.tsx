@@ -32,20 +32,7 @@ interface UpdateStatus {
   newCases: number
 }
 
-interface OrgStats {
-  summary_stats: {
-    total_cases: number;
-    link_count: number;
-    min_date: string | null;
-    max_date: string | null;
-  };
-  detail_stats: {
-    total_cases: number;
-    link_count: number;
-    min_date: string | null;
-    max_date: string | null;
-  };
-}
+// 移除OrgStats接口，不再需要按区域统计
 
 export default function UpdatePage() {
   const [selectedOrgs, setSelectedOrgs] = useState<string[]>([])
@@ -55,7 +42,7 @@ export default function UpdatePage() {
   const [isUpdating, setIsUpdating] = useState(false)
   const [updateStatuses, setUpdateStatuses] = useState<UpdateStatus[]>([])
   const [pendingOrgs, setPendingOrgs] = useState<string[]>([])
-  const [orgStats, setOrgStats] = useState<Record<string, OrgStats>>({});
+  // 移除orgStats状态，不再需要按区域统计
   
   // Add progress stream for details update
   const { state: detailsProgressState, startStream: startDetailsStream, stopStream: stopDetailsStream, resetState: resetDetailsState } = useProgressStream()
@@ -77,28 +64,7 @@ export default function UpdatePage() {
     fetchPendingOrgs()
   }, [])
 
-  useEffect(() => {
-    const fetchOrgStats = async (orgName: string) => {
-      try {
-        const response = await fetch(`/api/v1/stats/${orgName}`);
-        if (response.ok) {
-          const data = await response.json();
-          setOrgStats(prev => ({ ...prev, [orgName]: data }));
-        }
-      } catch (error) {
-        console.error(`获取机构 ${orgName} 统计失败:`, error);
-      }
-    };
-
-    selectedOrgs.forEach(org => {
-      setOrgStats(prev => {
-        if (!prev[org]) {
-          fetchOrgStats(org);
-        }
-        return prev;
-      });
-    });
-  }, [selectedOrgs]);
+  // 移除stats相关函数，不再需要按区域统计
 
   // 处理机构选择
   const handleOrgSelection = (org: string, checked: boolean) => {
@@ -399,6 +365,8 @@ export default function UpdatePage() {
                   取消全选
                 </Button>
               </div>
+              
+              {/* 移除加载统计信息按钮和提示，不再需要按区域统计 */}
 
               <div className="max-h-60 overflow-y-auto space-y-2">
                 {displayOrgs.map((org) => (
@@ -411,14 +379,7 @@ export default function UpdatePage() {
                       />
                       <Label htmlFor={org} className="text-sm font-medium">{org}</Label>
                     </div>
-                    {selectedOrgs.includes(org) && orgStats[org] && (
-                      <div className="ml-6 text-xs text-muted-foreground space-y-1 mt-1">
-                        <p>列表: {orgStats[org].summary_stats.total_cases} | 链接: {orgStats[org].summary_stats.link_count}</p>
-                        <p>列表日期: {orgStats[org].summary_stats.min_date} ~ {orgStats[org].summary_stats.max_date}</p>
-                        <p>详情: {orgStats[org].detail_stats.total_cases} | 链接: {orgStats[org].detail_stats.link_count}</p>
-                        <p>详情日期: {orgStats[org].detail_stats.min_date} ~ {orgStats[org].detail_stats.max_date}</p>
-                      </div>
-                    )}
+                    {/* 移除统计信息显示，不再需要按区域统计 */}
                   </div>
                 ))}
               </div>

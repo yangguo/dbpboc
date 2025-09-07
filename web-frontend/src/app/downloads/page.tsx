@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
-import { Download, FileText, Calendar, RefreshCw } from 'lucide-react'
+import { Download, FileText, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
 import { MainLayout } from '@/components/layout/main-layout'
 import { config } from '@/lib/config'
@@ -28,21 +28,7 @@ interface DownloadItem {
   uniqueUid?: string
 }
 
-type OrgStats = {
-  organization: string;
-  summary_stats: {
-    total_cases: number;
-    link_count: number;
-    min_date: string | null;
-    max_date: string | null;
-  };
-  detail_stats: {
-    total_cases: number;
-    link_count: number;
-    min_date: string | null;
-    max_date: string | null;
-  };
-}
+// 移除OrgStats类型定义，不再需要按区域统计
 
 export default function DownloadsPage() {
   const [downloads, setDownloads] = useState<DownloadItem[]>([])
@@ -50,8 +36,8 @@ export default function DownloadsPage() {
 
   const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({})
   const [orgs, setOrgs] = useState<string[]>([])
-  const [loading, setLoading] = useState(false)
-  const [stats, setStats] = useState<OrgStats[]>([])
+  // 移除loading状态，不再需要加载stats
+  // 移除stats状态，不再需要按区域统计
   const [uplinkInfo, setUplinkInfo] = useState<any>(null)
 
   // Load organizations
@@ -81,85 +67,30 @@ export default function DownloadsPage() {
     }
   }
 
-  // Load per-organization stats
-  const reloadStatsInternal = async () => {
-    if (!orgs.length) return
-    setLoading(true)
-    try {
-      const results: OrgStats[] = []
-      for (const org of orgs) {
-        try {
-          const resp = await fetch(`${config.backendUrl}/api/v1/stats/${encodeURIComponent(org)}`)
-          if (resp.ok) {
-            const data = await resp.json()
-            results.push(data as OrgStats)
-          }
-        } catch {
-          // ignore a single org failure
-        }
-      }
-      setStats(results)
-    } finally {
-      setLoading(false)
-    }
-  }
+  // 移除reloadStats函数，不再需要按区域统计
 
   // 使用防重复调用的hook
   const loadUplinkInfo = useApiCallDeduplication(loadUplinkInfoInternal, 'loadUplinkInfo', 2000)
-  const reloadStats = useApiCallDeduplication(reloadStatsInternal, 'reloadStats', 2000)
 
   useEffect(() => {
-    // initial load when orgs list arrives
-    if (orgs.length) reloadStats()
+    // 仅加载uplink信息，不自动加载所有组织的统计信息（懒加载策略）
     loadUplinkInfo()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgs.length]) // 只依赖orgs的长度，避免数组引用变化导致的重复调用
 
-  // Calculate aggregated statistics from real data
+  // Calculate aggregated statistics from uplink data
   const agg = useMemo(() => {
-    // Use uplink info data as primary source, fallback to org stats aggregation
-    if (uplinkInfo) {
-      return {
-        sumCount: uplinkInfo.sum?.total_cases || 0,
-        dtlCount: uplinkInfo.dtl?.total_cases || 0,
-        sumUnique: uplinkInfo.sum?.link_count || 0,
-        dtlUnique: uplinkInfo.dtl?.link_count || 0,
-        sumMin: uplinkInfo.sum?.min_date || null,
-        sumMax: uplinkInfo.sum?.max_date || null,
-        dtlMin: uplinkInfo.dtl?.min_date || null,
-        dtlMax: uplinkInfo.dtl?.max_date || null,
-      }
-    }
-
-    // Fallback: Aggregate counts and date ranges across orgs
-    const sumCount = stats.reduce((acc, s) => acc + (s.summary_stats?.total_cases || 0), 0)
-    const dtlCount = stats.reduce((acc, s) => acc + (s.detail_stats?.total_cases || 0), 0)
-    const sumUnique = stats.reduce((acc, s) => acc + (s.summary_stats?.link_count || 0), 0)
-    const dtlUnique = stats.reduce((acc, s) => acc + (s.detail_stats?.link_count || 0), 0)
-
-    const sumDates = stats
-      .map(s => ({ min: s.summary_stats?.min_date, max: s.summary_stats?.max_date }))
-      .filter(x => x.min && x.max) as { min: string; max: string }[]
-    const dtlDates = stats
-      .map(s => ({ min: s.detail_stats?.min_date, max: s.detail_stats?.max_date }))
-      .filter(x => x.min && x.max) as { min: string; max: string }[]
-
-    const min = (dates: { min: string; max: string }[]) =>
-      dates.length ? dates.map(d => d.min).sort()[0] : null
-    const max = (dates: { min: string; max: string }[]) =>
-      dates.length ? dates.map(d => d.max).sort().slice(-1)[0] : null
-
     return {
-      sumCount,
-      dtlCount,
-      sumUnique,
-      dtlUnique,
-      sumMin: min(sumDates),
-      sumMax: max(sumDates),
-      dtlMin: min(dtlDates),
-      dtlMax: max(dtlDates),
+      sumCount: uplinkInfo?.sum?.total_cases || 0,
+      dtlCount: uplinkInfo?.dtl?.total_cases || 0,
+      sumUnique: uplinkInfo?.sum?.link_count || 0,
+      dtlUnique: uplinkInfo?.dtl?.link_count || 0,
+      sumMin: uplinkInfo?.sum?.min_date || null,
+      sumMax: uplinkInfo?.sum?.max_date || null,
+      dtlMin: uplinkInfo?.dtl?.min_date || null,
+      dtlMax: uplinkInfo?.dtl?.max_date || null,
     }
-  }, [uplinkInfo, stats])
+  }, [uplinkInfo])
 
   // Generate download items based on real data
   const pbocDownloads: DownloadItem[] = useMemo(() => [
@@ -306,9 +237,6 @@ export default function DownloadsPage() {
               下载和管理案例相关文档和附件（数据与案例上线保持同步）
             </p>
           </div>
-          <Button variant="outline" onClick={reloadStats} className="flex items-center gap-2">
-            {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} 刷新
-          </Button>
         </div>
 
 
