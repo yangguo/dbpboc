@@ -155,13 +155,29 @@ city2province = {
 
 
 def get_csvdf(penfolder, beginwith):
-    files2 = glob.glob(penfolder + "**/" + beginwith + "*.csv", recursive=True)
+    # 使用os.path.join正确处理路径，并匹配实际文件名格式
+    pattern = os.path.join(penfolder, beginwith + "*.csv")
+    files2 = glob.glob(pattern)
     dflist = []
     # filelist = []
     for filepath in files2:
-        # Use low_memory=False to avoid mixed-type DtypeWarning across chunks
-        pendf = pd.read_csv(filepath, index_col=0, low_memory=False)
-        dflist.append(pendf)
+        try:
+            # Try to read the file normally first
+            try:
+                pendf = pd.read_csv(filepath, low_memory=False)
+                dflist.append(pendf)
+            except MemoryError:
+                # If memory error, try reading in chunks
+                print(f"Memory error reading {filepath}, trying chunked reading...")
+                chunk_list = []
+                chunk_size = 10000  # Read 10k rows at a time
+                for chunk in pd.read_csv(filepath, chunksize=chunk_size, low_memory=False):
+                    chunk_list.append(chunk)
+                pendf = pd.concat(chunk_list, ignore_index=True)
+                dflist.append(pendf)
+        except Exception as e:
+            print(f"Error reading {filepath}: {e}")
+            continue
         # filelist.append(filename)
     if len(dflist) > 0:
         df = pd.concat(dflist)
@@ -233,42 +249,19 @@ def searchpboc(
 
 # summary of pboc
 def display_summary():
-    # get old sumeventdf
+    # get old sumeventdf - 直接使用get_pbocdetail返回的已合并数据
     oldsum2 = get_pbocdetail("")
     
-    # 获取所有pbocsum数据用于关联发布日期
-    all_sum_list = []
-    for org in org2name.keys():
-        org_sum = get_pbocsum(org)
-        if not org_sum.empty:
-            all_sum_list.append(org_sum)
-    
-    if all_sum_list:
-        sumdf = pd.concat(all_sum_list, ignore_index=True)
-        # 通过link字段关联pbocsum，从pbocsum中获取发布日期和区域
-        if not sumdf.empty and 'link' in oldsum2.columns and 'link' in sumdf.columns:
-            # 使用left join保留所有pbocdtl记录，同时获取发布日期和区域
-            oldsum2 = pd.merge(oldsum2, sumdf[['link', '发布日期', '区域']], 
-                             left_on='link', right_on='link', how='left', suffixes=('_dtl', '_sum'))
-            
-            # 优先使用pbocsum的发布日期，如果没有则使用pbocdtl的date
-            if '发布日期_sum' in oldsum2.columns:
-                oldsum2['发布日期'] = oldsum2['发布日期_sum'].fillna(
-                    pd.to_datetime(oldsum2['date'], errors='coerce'))
-                # 清理多余列
-                oldsum2 = oldsum2.drop(['发布日期_dtl', '发布日期_sum'], axis=1)
-            else:
-                oldsum2["发布日期"] = pd.to_datetime(oldsum2["date"], errors="coerce")
-            
-            # 优先使用pbocsum的区域，如果没有则使用pbocdtl的区域
-            if '区域_sum' in oldsum2.columns:
-                oldsum2['区域'] = oldsum2['区域_sum'].fillna(oldsum2['区域_dtl'])
-                # 清理多余列
-                oldsum2 = oldsum2.drop(['区域_dtl', '区域_sum'], axis=1)
-        else:
+    # 确保发布日期列存在且格式正确
+    if '发布日期' not in oldsum2.columns:
+        if 'date' in oldsum2.columns:
             oldsum2["发布日期"] = pd.to_datetime(oldsum2["date"], errors="coerce")
+        else:
+            # 如果没有date列，创建空的发布日期列
+            oldsum2["发布日期"] = pd.NaT
     else:
-        oldsum2["发布日期"] = pd.to_datetime(oldsum2["date"], errors="coerce")
+        # 确保发布日期列是datetime格式
+        oldsum2["发布日期"] = pd.to_datetime(oldsum2["发布日期"], errors="coerce")
     
     # get length of old eventdf
     oldlen2 = len(oldsum2)
@@ -291,30 +284,40 @@ def display_summary():
         st.metric("案例日期范围", f"{min_date2} - {max_date2}")
 
     # sum max,min date and size by org (只统计有效日期的记录)
-    valid_date_records = oldsum2[oldsum2["发布日期"].notna()]
-    
-    if not valid_date_records.empty:
-        sumdf2 = (
-            valid_date_records.groupby("区域")["发布日期"].agg(["max", "min", "count"]).reset_index()
-        )
-        sumdf2.columns = ["区域", "最近发文日期", "最早发文日期", "案例总数"]
+    if "区域" in oldsum2.columns:
+        valid_date_records = oldsum2[oldsum2["发布日期"].notna()]
         
-        # 添加所有记录的统计（包括无效日期）
-        all_counts = oldsum2.groupby("区域").size().reset_index(name="总记录数")
-        sumdf2 = pd.merge(sumdf2, all_counts, on="区域", how="right")
-        sumdf2["案例总数"] = sumdf2["案例总数"].fillna(0).astype(int)
-        sumdf2["总记录数"] = sumdf2["总记录数"].fillna(0).astype(int)
-        
-        # sort by date
-        sumdf2.sort_values(by=["最近发文日期"], ascending=False, inplace=True)
-        # reset index
-        sumdf2.reset_index(drop=True, inplace=True)
+        if not valid_date_records.empty:
+            sumdf2 = (
+                valid_date_records.groupby("区域")["发布日期"].agg(["max", "min", "count"]).reset_index()
+            )
+            sumdf2.columns = ["区域", "最近发文日期", "最早发文日期", "案例总数"]
+            
+            # 添加所有记录的统计（包括无效日期）
+            all_counts = oldsum2.groupby("区域").size().reset_index(name="总记录数")
+            sumdf2 = pd.merge(sumdf2, all_counts, on="区域", how="right")
+            sumdf2["案例总数"] = sumdf2["案例总数"].fillna(0).astype(int)
+            sumdf2["总记录数"] = sumdf2["总记录数"].fillna(0).astype(int)
+            
+            # sort by date
+            sumdf2.sort_values(by=["最近发文日期"], ascending=False, inplace=True)
+            # reset index
+            sumdf2.reset_index(drop=True, inplace=True)
+        else:
+            # 如果没有有效日期记录，至少显示总数
+            sumdf2 = oldsum2.groupby("区域").size().reset_index(name="总记录数")
+            sumdf2["最近发文日期"] = None
+            sumdf2["最早发文日期"] = None
+            sumdf2["案例总数"] = 0
     else:
-        # 如果没有有效日期记录，至少显示总数
-        sumdf2 = oldsum2.groupby("区域").size().reset_index(name="总记录数")
-        sumdf2["最近发文日期"] = None
-        sumdf2["最早发文日期"] = None
-        sumdf2["案例总数"] = 0
+        # 如果没有区域列，创建简单的统计表
+        sumdf2 = pd.DataFrame({
+            "区域": ["未知区域"],
+            "最近发文日期": [None],
+            "最早发文日期": [None],
+            "案例总数": [0],
+            "总记录数": [len(oldsum2)]
+        })
     
     # display
     st.markdown("#### 按区域统计")
@@ -329,7 +332,11 @@ def get_pbocsum(orgname):
     beginwith = "pbocsum"
     allpendf = get_csvdf(penpboc, beginwith)
     # get pendf by orgname
-    pendf = allpendf[allpendf["区域"] == orgname]
+    if "区域" in allpendf.columns:
+        pendf = allpendf[allpendf["区域"] == orgname]
+    else:
+        # 如果没有区域列，返回空DataFrame
+        pendf = pd.DataFrame()
     # cols = ["name", "date", "link", "sum"]
     # if not empty
     if len(pendf) > 0:
@@ -376,7 +383,7 @@ def get_pbocdetail(orgname):
         # 优先使用pbocsum的发布日期，如果没有则使用pbocdtl的date
         if '发布日期_sum' in d0.columns:
             d0['发布日期'] = d0['发布日期_sum'].fillna(
-                pd.to_datetime(d0['date'], errors='coerce'))
+                pd.to_datetime(d0['date'], errors='coerce')).infer_objects(copy=False)
             # 清理多余列
             d0 = d0.drop(['发布日期_dtl', '发布日期_sum'], axis=1, errors='ignore')
         else:
