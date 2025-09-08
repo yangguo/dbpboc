@@ -1491,22 +1491,67 @@ def uplink_pbocsum():
         "企业名称",
         "处罚决定书文号",
         "违法行为类型",
+        "行政处罚依据",
         "行政处罚内容",
         "作出行政处罚决定机关名称",
         "作出行政处罚决定日期",
-        "备注",
+        # "备注",
         "区域",
         "link",
         "name",
         "date",
         "发布日期",
+        "uid",
     ]
+    
     # st.write(dtl.isnull().sum())
-    dtllink = dtl[col]
+    # 只选择在dtl中实际存在的字段
+    available_cols = [c for c in col if c in dtl.columns]
+    dtllink = dtl[available_cols]
 
     # dtllink['处罚决定书文号'] = dtllink['处罚决定书文号'].astype(str)
     # convert 处罚决定书文号 to str using loc
     dtllink.loc[:, "处罚决定书文号"] = dtllink["处罚决定书文号"].astype(str)
+
+    # 合并pboccat数据（分块处理优化）
+    catdf = get_pboccat()
+    if not catdf.empty and "uid" in catdf.columns and "uid" in dtllink.columns:
+        # 过滤掉uid为空的记录
+        dtllink = dtllink.dropna(subset=["uid"])
+        
+        # 只保留需要的列：amount, category, province, industry, uid
+        cat_cols = ["amount", "category", "province", "industry", "uid"]
+        cat_cols = [c for c in cat_cols if c in catdf.columns]
+        catdf_small = catdf[cat_cols].copy()
+        
+        # 过滤掉uid为空的记录
+        catdf_small = catdf_small.dropna(subset=["uid"])
+        
+        # 去重catdf以减少数据量
+        catdf_small = catdf_small.drop_duplicates(subset=["uid"])
+        
+        # 分块处理大数据集
+        chunk_size = 50000  # 每次处理5万条记录
+        if len(dtllink) > chunk_size:
+            st.info(f"数据量较大({len(dtllink)}条)，使用分块处理...")
+            merged_chunks = []
+            
+            for i in range(0, len(dtllink), chunk_size):
+                chunk = dtllink.iloc[i:i+chunk_size].copy()
+                # 通过uid字段进行左连接
+                merged_chunk = pd.merge(chunk, catdf_small, on="uid", how="left", suffixes=("", "_cat"))
+                merged_chunks.append(merged_chunk)
+                
+                # 显示进度
+                progress = min((i + chunk_size) / len(dtllink), 1.0)
+                st.progress(progress, f"处理进度: {progress:.1%}")
+            
+            # 合并所有块
+            dtllink = pd.concat(merged_chunks, ignore_index=True)
+            st.success("分块处理完成")
+        else:
+            # 小数据集直接合并
+            dtllink = pd.merge(dtllink, catdf_small, on="uid", how="left", suffixes=("", "_cat"))
 
     # st.write(dtllink)
 
@@ -1553,7 +1598,81 @@ def uplink_pbocsum():
     updf = dtllink[~dtllink["link"].isin(olddf["link"])]
     # display update data
     st.write("待更新上线数据量: " + str(len(updf)))
-    st.write(updf)
+    
+    if len(updf) > 0:
+        # 添加选择功能
+        st.markdown("#### 选择待上线记录")
+        
+        # 初始化session state
+        if 'uplink_selection' not in st.session_state:
+            st.session_state.uplink_selection = [False] * len(updf)
+        
+        # 确保session state长度与数据长度一致
+        if len(st.session_state.uplink_selection) != len(updf):
+            st.session_state.uplink_selection = [False] * len(updf)
+        
+        # 显示待更新数据的预览
+        display_cols = ["企业名称", "处罚决定书文号", "违法行为类型", "发布日期", "区域"]
+        available_cols = [col for col in display_cols if col in updf.columns]
+        if available_cols:
+            preview_df = updf[available_cols].copy()
+            # 添加索引列用于选择
+            preview_df.insert(0, "选择", st.session_state.uplink_selection)
+            preview_df.insert(1, "序号", range(1, len(preview_df) + 1))
+            
+            # 全选/全不选/反选按钮
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("全选"):
+                    st.session_state.uplink_selection = [True] * len(updf)
+                    st.rerun()
+            with col2:
+                if st.button("全不选"):
+                    st.session_state.uplink_selection = [False] * len(updf)
+                    st.rerun()
+            with col3:
+                if st.button("反选"):
+                    st.session_state.uplink_selection = [not x for x in st.session_state.uplink_selection]
+                    st.rerun()
+            
+            # 使用data_editor让用户选择记录
+            edited_df = st.data_editor(
+                preview_df,
+                column_config={
+                    "选择": st.column_config.CheckboxColumn(
+                        "选择",
+                        help="勾选要上线的记录",
+                        default=False,
+                    )
+                },
+                disabled=[col for col in preview_df.columns if col != "选择"],
+                hide_index=True,
+                use_container_width=True,
+                key="uplink_data_editor"
+            )
+            
+            # 更新session state
+            st.session_state.uplink_selection = edited_df["选择"].tolist()
+            
+            # 获取选中的记录
+            selected_indices = [i for i, selected in enumerate(st.session_state.uplink_selection) if selected]
+            selected_updf = updf.iloc[selected_indices] if selected_indices else pd.DataFrame()
+            
+            st.write(f"已选择 {len(selected_updf)} 条记录进行上线")
+        else:
+            # 如果没有可显示的列，显示原始数据并提供简单的选择界面
+            st.write("数据预览:")
+            st.write(updf.head())
+            
+            # 提供批量选择选项
+            select_all = st.checkbox("选择全部记录进行上线")
+            if select_all:
+                selected_updf = updf
+            else:
+                selected_updf = pd.DataFrame()
+    else:
+        selected_updf = pd.DataFrame()
+        st.info("没有待更新的数据")
 
     # download update data
     st.download_button(
@@ -1561,11 +1680,22 @@ def uplink_pbocsum():
         data=updf.to_csv().encode("utf_8_sig"),
         file_name="待更新数据.csv",
     )
+    
+    # download selected data
+    if len(selected_updf) > 0:
+        st.download_button(
+            "下载选中数据",
+            data=selected_updf.to_csv().encode("utf_8_sig"),
+            file_name="选中待上线数据.csv",
+        )
 
-    # Insert data into the MongoDB collection
-    if st.button("更新上线数据"):
-        insert_data(updf, collection)
-        st.success("案例数据上线成功！")
+    # Insert selected data into the MongoDB collection
+    if len(selected_updf) > 0:
+        if st.button(f"上线选中数据 ({len(selected_updf)} 条)"):
+            insert_data(selected_updf, collection)
+            st.success(f"成功上线 {len(selected_updf)} 条案例数据！")
+    else:
+        st.info("请先选择要上线的记录")
 
     
 
