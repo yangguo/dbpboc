@@ -382,8 +382,11 @@ def get_pbocdetail(orgname):
         
         # 优先使用pbocsum的发布日期，如果没有则使用pbocdtl的date
         if '发布日期_sum' in d0.columns:
-            d0['发布日期'] = d0['发布日期_sum'].fillna(
-                pd.to_datetime(d0['date'], errors='coerce')).infer_objects(copy=False)
+            # 使用where方法避免fillna的FutureWarning
+            d0['发布日期'] = d0['发布日期_sum'].where(
+                d0['发布日期_sum'].notna(), 
+                pd.to_datetime(d0['date'], errors='coerce')
+            )
             # 清理多余列
             d0 = d0.drop(['发布日期_dtl', '发布日期_sum'], axis=1, errors='ignore')
         else:
