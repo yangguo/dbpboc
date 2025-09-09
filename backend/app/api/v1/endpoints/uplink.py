@@ -45,22 +45,40 @@ def _build_dtllink_df() -> pd.DataFrame:
     dtl = _read_csvs(PBOC_DATA_PATH, "pbocdtl")
     if dtl.empty:
         return pd.DataFrame()
-    cols = [
+    
+    # 选择dtl中的基础字段，企业名称直接从pbocdtl获取
+    dtl_cols = [
         "企业名称",
         "处罚决定书文号",
         "违法行为类型",
         "行政处罚内容",
+        "行政处罚依据",
         "作出行政处罚决定机关名称",
         "作出行政处罚决定日期",
-        "区域",
         "link",
-        "name",
-        "date",
         "uid",
     ]
     # Intersect available columns
-    available = [c for c in cols if c in dtl.columns]
-    dtllink = dtl[available].copy()
+    available_dtl = [c for c in dtl_cols if c in dtl.columns]
+    dtllink = dtl[available_dtl].copy()
+    
+    # 通过link字段左关联pbocsum获取区域、name、date字段
+    try:
+        sum_df = _read_csvs(PBOC_DATA_PATH, "pbocsum")
+        if not sum_df.empty and "link" in sum_df.columns and "link" in dtllink.columns:
+            # 选择需要的pbocsum字段
+            sum_cols = ["link", "区域", "name", "date"]
+            available_sum_cols = [c for c in sum_cols if c in sum_df.columns]
+            sum_subset = sum_df[available_sum_cols].copy()
+            
+            # 去重pbocsum数据（保留第一条记录）
+            sum_subset = sum_subset.drop_duplicates(subset=["link"], keep="first")
+            
+            # 左关联
+            dtllink = dtllink.merge(sum_subset, on="link", how="left")
+    except Exception as e:
+        # 如果关联失败，继续处理但不添加pbocsum字段
+        pass
     
     # 统一 文号列为字符串
     if "处罚决定书文号" in dtllink.columns:
@@ -95,8 +113,10 @@ def _build_dtllink_df() -> pd.DataFrame:
             # 如果关联失败，继续处理但不添加pboccat字段
             pass
     
-    # 去掉空白（在关联之后处理，避免影响关联效果）
-    dtllink = dtllink.map(lambda x: re.sub(r"\s+", "", x) if isinstance(x, str) else x)
+    # 处理企业名称中的空白字符问题
+    if "企业名称" in dtllink.columns:
+        # 将纯空白字符的企业名称设为None，但保留有实际内容的企业名称
+        dtllink.loc[dtllink["企业名称"].str.strip() == "", "企业名称"] = None
     
     # 发布日期
     if "date" in dtllink.columns:
