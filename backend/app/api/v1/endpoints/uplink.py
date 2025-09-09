@@ -224,8 +224,8 @@ async def uplink_clear():
 
 
 @router.post("/update")
-async def uplink_update():
-    """Insert new dtl rows (from CSV) into Mongo pbocdtl by link-dedup."""
+async def uplink_update(selected_ids: List[str] = None):
+    """Insert selected dtl rows (from CSV) into Mongo pbocdtl by link-dedup."""
     try:
         dtllink = _build_dtllink_df()
         if dtllink.empty:
@@ -235,29 +235,64 @@ async def uplink_update():
         database = await get_database()
         col = database["pbocdtl"]
 
-        # existing links
-        links = dtllink["link"].dropna().unique().tolist() if "link" in dtllink.columns else []
-        existing_links: set[str] = set()
-        if links:
-            cursor = col.find({"link": {"$in": links}}, {"link": 1, "_id": 0})
+        # If no selected_ids provided, use all pending records (backward compatibility)
+        if selected_ids is None or len(selected_ids) == 0:
+            # existing links
+            links = dtllink["link"].dropna().unique().tolist() if "link" in dtllink.columns else []
+            existing_links: set[str] = set()
+            if links:
+                cursor = col.find({"link": {"$in": links}}, {"link": 1, "_id": 0})
+                async for doc in cursor:
+                    if "link" in doc and doc["link"]:
+                        existing_links.add(doc["link"]) 
+
+            # build docs to insert
+            to_insert: List[Dict[str, Any]] = []
+            for _, row in dtllink.iterrows():
+                link = row.get("link")
+                if not link or link in existing_links:
+                    continue
+                doc = {k: (None if (pd.isna(v)) else v) for k, v in row.to_dict().items()}
+                to_insert.append(doc)
+
+            inserted = 0
+            if to_insert:
+                start_time = datetime.now()
+                res = await col.insert_many(to_insert)
+                inserted = len(res.inserted_ids)
+                processing_time = (datetime.now() - start_time).total_seconds()
+                return {"inserted": inserted, "skipped": len(links) - inserted, "processing_time": f"{processing_time:.2f}s"}
+            return {"inserted": 0, "skipped": len(links)}
+        else:
+            # Filter for selected records only
+            selected_df = dtllink[dtllink["link"].isin(selected_ids)]
+            if selected_df.empty:
+                return {"inserted": 0, "skipped": 0}
+
+            # Check which selected links already exist in MongoDB
+            existing_links: set[str] = set()
+            cursor = col.find({"link": {"$in": selected_ids}}, {"link": 1, "_id": 0})
             async for doc in cursor:
                 if "link" in doc and doc["link"]:
-                    existing_links.add(doc["link"]) 
+                    existing_links.add(doc["link"])
 
-        # build docs to insert
-        to_insert: List[Dict[str, Any]] = []
-        for _, row in dtllink.iterrows():
-            link = row.get("link")
-            if not link or link in existing_links:
-                continue
-            doc = {k: (None if (pd.isna(v)) else v) for k, v in row.to_dict().items()}
-            to_insert.append(doc)
+            # build docs to insert (only those not already in MongoDB)
+            to_insert: List[Dict[str, Any]] = []
+            for _, row in selected_df.iterrows():
+                link = row.get("link")
+                if not link or link in existing_links:
+                    continue
+                doc = {k: (None if (pd.isna(v)) else v) for k, v in row.to_dict().items()}
+                to_insert.append(doc)
 
-        inserted = 0
-        if to_insert:
-            res = await col.insert_many(to_insert)
-            inserted = len(res.inserted_ids)
-        return {"inserted": inserted, "skipped": len(links) - inserted}
+            inserted = 0
+            if to_insert:
+                start_time = datetime.now()
+                res = await col.insert_many(to_insert)
+                inserted = len(res.inserted_ids)
+                processing_time = (datetime.now() - start_time).total_seconds()
+                return {"inserted": inserted, "skipped": len(selected_ids) - inserted, "processing_time": f"{processing_time:.2f}s"}
+            return {"inserted": 0, "skipped": len(selected_ids)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -297,5 +332,35 @@ async def uplink_pending():
             "records": pending_records,
             "count": len(pending_records)
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/export-selected")
+async def uplink_export_selected(selected_ids: List[str] = None):
+    """Export selected pending records as CSV."""
+    try:
+        if selected_ids is None:
+            raise HTTPException(status_code=400, detail="No selected IDs provided")
+        
+        # 获取本地CSV数据
+        dtllink = _build_dtllink_df()
+        
+        if dtllink.empty or "link" not in dtllink.columns:
+            raise HTTPException(status_code=404, detail="No pending data available")
+        
+        # 筛选出选中的记录
+        selected_df = dtllink[dtllink["link"].isin(selected_ids)]
+        
+        if selected_df.empty:
+            raise HTTPException(status_code=404, detail="No matching records found")
+        
+        # 转换为CSV
+        csv = selected_df.to_csv(index=False).encode("utf-8")
+        filename = f"selected_pending_data_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+        headers = {"Content-Disposition": f"attachment; filename={filename}"}
+        return Response(content=csv, media_type="text/csv", headers=headers)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

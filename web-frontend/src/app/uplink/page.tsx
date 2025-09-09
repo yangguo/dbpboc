@@ -147,7 +147,7 @@ export default function UplinkPage() {
     if (selectedRecords.size === pendingData.length) {
       setSelectedRecords(new Set());
     } else {
-      setSelectedRecords(new Set(pendingData.map(record => record.id)));
+      setSelectedRecords(new Set(pendingData.map((record, index) => record.link || record.uid || `index-${index}`)));
     }
   };
 
@@ -163,9 +163,10 @@ export default function UplinkPage() {
 
   const handleInvertSelection = () => {
     const newSelected = new Set<string>();
-    pendingData.forEach(record => {
-      if (!selectedRecords.has(record.id)) {
-        newSelected.add(record.id);
+    pendingData.forEach((record, index) => {
+      const recordId = record.link || record.uid || `index-${index}`;
+      if (!selectedRecords.has(recordId)) {
+        newSelected.add(recordId);
       }
     });
     setSelectedRecords(newSelected);
@@ -418,11 +419,11 @@ export default function UplinkPage() {
                   </TableHeader>
                   <TableBody>
                     {pendingData.map((record, index) => (
-                      <TableRow key={record.id}>
+                      <TableRow key={`${record.uid || record.link || `uplink-${index}`}-${index}`}>
                         <TableCell>
                           <Checkbox
-                            checked={selectedRecords.has(record.id)}
-                            onCheckedChange={() => handleSelectRecord(record.id)}
+                            checked={selectedRecords.has(record.link || record.uid || index.toString())}
+                            onCheckedChange={() => handleSelectRecord(record.link || record.uid || index.toString())}
                           />
                         </TableCell>
                         <TableCell className="font-mono text-sm">{index + 1}</TableCell>

@@ -492,7 +492,7 @@ export default function CasesPage() {
                 <TableBody>
                   {items.map((it, idx) => (
                     <TableRow
-                      key={`${it.uid || it.doc_no || it.link}-${idx}`}
+                      key={`${it.uid || it.doc_no || `item-${idx}`}-${idx}`}
                       className="cursor-pointer hover:bg-muted/50 transition-colors"
                       onClick={() => handleRowClick(it)}
                     >

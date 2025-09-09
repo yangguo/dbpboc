@@ -341,7 +341,7 @@ export default function PendingDetailsPage() {
                   const isSelected = selectedLinks.includes(linkDetail.link);
                   return (
                     <div 
-                      key={linkDetail.link || `pending-link-${index}`} 
+                      key={`pending-link-${index}`} 
                       className={`grid grid-cols-12 gap-3 items-center p-4 rounded-xl transition-all duration-200 cursor-pointer group ${
                         isSelected 
                           ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 border-2 border-blue-400/30 shadow-md' 

@@ -1128,8 +1128,12 @@ def get_sumeventdf(orgname: str, start: int, end: int):
         return pd.DataFrame()
         
     sumdf = pd.concat(resultls)
+    # Normalize URLs by removing .html extension for better deduplication
+    sumdf['normalized_link'] = sumdf['link'].str.replace(r'\.html$', '', regex=True)
     # Remove potential duplicates that might occur across different base URLs
-    sumdf = sumdf.drop_duplicates(subset=['link'], keep='first')
+    sumdf = sumdf.drop_duplicates(subset=['normalized_link'], keep='first')
+    # Drop the temporary normalized_link column
+    sumdf = sumdf.drop('normalized_link', axis=1)
     sumdf["区域"] = orgname
     return sumdf
 
