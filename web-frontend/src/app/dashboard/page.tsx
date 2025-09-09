@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,65 +12,57 @@ import {
   AlertCircle,
   CheckCircle,
   Clock,
-  DollarSign
+  DollarSign,
+  RefreshCw,
+  Download,
+  CheckSquare,
+  Square,
+  RotateCcw
 } from "lucide-react";
 import { MainLayout } from "@/components/layout/main-layout";
+import { config } from "@/lib/config";
 
-// Mock data - in real app this would come from API
-const stats = {
-  totalCases: 1248,
-  totalPenalty: 45600000,
-  avgPenalty: 36538,
-  recentCases: 23,
+// 统计数据类型定义
+type DashboardStats = {
+  totalCases: number;
+  totalPenalty: number;
+  avgPenalty: number;
+  recentCases: number;
   byStatus: {
-    active: 856,
-    closed: 392
-  },
-  byProvince: {
-    "北京": 156,
-    "上海": 134,
-    "广东": 128,
-    "江苏": 98,
-    "浙江": 87
-  },
-  byCaseType: {
-    "违规放贷": 234,
-    "资金违规使用": 198,
-    "信息披露违规": 167,
-    "内控制度缺失": 145,
-    "其他": 504
-  }
+    active: number;
+    closed: number;
+  };
+  byProvince: Record<string, number>;
+  byCaseType: Record<string, number>;
 };
 
-const recentCases = [
-  {
-    id: "1",
-    title: "某银行违规放贷案例",
-    organization: "XX银行",
-    province: "北京",
-    penalty: 500000,
-    status: "处理中",
-    date: "2024-01-15"
-  },
-  {
-    id: "2",
-    title: "资金违规使用案例",
-    organization: "YY金融",
-    province: "上海",
-    penalty: 300000,
-    status: "已结案",
-    date: "2024-01-14"
-  },
-  {
-    id: "3",
-    title: "信息披露不当案例",
-    organization: "ZZ证券",
-    province: "深圳",
-    penalty: 200000,
-    status: "调查中",
-    date: "2024-01-13"
-  }
-];
+// 组织数据类型定义
+type OrgStats = {
+  organization: string;
+  summary_stats: {
+    total_cases: number;
+    link_count: number;
+    min_date: string | null;
+    max_date: string | null;
+  };
+  detail_stats: {
+    total_cases: number;
+    link_count: number;
+    min_date: string | null;
+    max_date: string | null;
+  };
+};
+
+// 最近案例数据类型定义
+type RecentCase = {
+  id: string;
+  title: string;
+  organization: string;
+  province: string;
+  penalty: number;
+  status: string;
+  date: string;
+};
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('zh-CN', {
@@ -94,6 +87,170 @@ function getStatusColor(status: string) {
 }
 
 export default function DashboardPage() {
+  // Dashboard统计数据状态
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [recentCases, setRecentCases] = useState<RecentCase[]>([]);
+  const [statsLoading, setStatsLoading] = useState(false);
+  
+  // 组织数据状态
+  const [orgStats, setOrgStats] = useState<OrgStats[]>([]);
+  const [selectedRows, setSelectedRows] = useState<number[]>([]);
+  const [selectAll, setSelectAll] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // 加载Dashboard统计数据
+  const loadDashboardStats = async () => {
+    try {
+      setStatsLoading(true);
+      const response = await fetch(`${config.backendUrl}/api/v1/dashboard/stats`);
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+      } else {
+        console.error('Failed to load dashboard stats');
+      }
+    } catch (error) {
+      console.error('Error loading dashboard stats:', error);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
+  // 加载最近案例数据
+  const loadRecentCases = async () => {
+    try {
+      const response = await fetch(`${config.backendUrl}/api/v1/dashboard/recent-cases`);
+      if (response.ok) {
+        const data = await response.json();
+        setRecentCases(data);
+      } else {
+        console.error('Failed to load recent cases');
+      }
+    } catch (error) {
+      console.error('Error loading recent cases:', error);
+    }
+  };
+
+  // 加载组织数据
+  const loadOrgStats = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch(`${config.backendUrl}/api/v1/org/stats`);
+      if (response.ok) {
+        const data = await response.json();
+        setOrgStats(data);
+      } else {
+        console.error('Failed to load organization stats');
+      }
+    } catch (error) {
+      console.error('Error loading organization stats:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 页面加载时获取数据
+  useEffect(() => {
+    loadDashboardStats();
+    loadRecentCases();
+    loadOrgStats();
+  }, []);
+
+  // 行选择处理
+  const handleRowSelect = (index: number) => {
+    setSelectedRows(prev => {
+      const newSelection = prev.includes(index) 
+        ? prev.filter(i => i !== index)
+        : [...prev, index];
+      
+      const orgStatsLength = Array.isArray(orgStats) ? orgStats.length : 0;
+      setSelectAll(newSelection.length === orgStatsLength && orgStatsLength > 0);
+      return newSelection;
+    });
+  };
+
+  // 全选/全不选
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedRows([]);
+      setSelectAll(false);
+    } else {
+      if (Array.isArray(orgStats)) {
+        setSelectedRows(orgStats.map((_, index) => index));
+        setSelectAll(true);
+      }
+    }
+  };
+
+  // 反选
+  const handleInvertSelection = () => {
+    if (Array.isArray(orgStats)) {
+      const allIndices = orgStats.map((_, index) => index);
+      const newSelection = allIndices.filter(index => !selectedRows.includes(index));
+      setSelectedRows(newSelection);
+      setSelectAll(newSelection.length === orgStats.length && orgStats.length > 0);
+    }
+  };
+
+  // 下载功能
+  const downloadAll = async (organizations: string[]) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${config.backendUrl}/api/v1/download`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ organizations }),
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `organizations_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        alert('下载成功！');
+      } else {
+        alert('下载失败，请重试');
+      }
+    } catch (error) {
+      console.error('下载失败:', error);
+      alert('下载失败，请重试');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadSelected = async () => {
+    if (selectedRows.length === 0) {
+      alert('请先选择要下载的组织');
+      return;
+    }
+
+    if (!Array.isArray(orgStats)) {
+      alert('组织数据未加载');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const selectedOrgs = selectedRows.map(index => orgStats[index].organization);
+      await downloadAll(selectedOrgs);
+    } catch (error) {
+      console.error('下载失败:', error);
+      alert('下载失败，请重试');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -136,10 +293,10 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent className="relative z-10">
               <div className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">
-                {stats.totalCases.toLocaleString()}
+                {statsLoading ? '加载中...' : stats?.totalCases?.toLocaleString() || '0'}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                <span className="text-green-600 font-semibold">+{stats.recentCases}</span> 本月新增
+                <span className="text-green-600 font-semibold">+{stats?.recentCases || 0}</span> 本月新增
               </p>
             </CardContent>
           </Card>
@@ -154,10 +311,10 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent className="relative z-10">
               <div className="text-3xl font-bold bg-gradient-to-r from-green-600 to-green-800 bg-clip-text text-transparent">
-                {formatCurrency(stats.totalPenalty)}
+                {statsLoading ? '加载中...' : formatCurrency(stats?.totalPenalty || 0)}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                平均 <span className="font-semibold">{formatCurrency(stats.avgPenalty)}</span> 每案例
+                平均 <span className="font-semibold">{formatCurrency(stats?.avgPenalty || 0)}</span> 每案例
               </p>
             </CardContent>
           </Card>
@@ -172,10 +329,10 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent className="relative z-10">
               <div className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-orange-800 bg-clip-text text-transparent">
-                {stats.byStatus.active.toLocaleString()}
+                {statsLoading ? '加载中...' : stats?.byStatus?.active?.toLocaleString() || '0'}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                <span className="font-semibold">{stats.byStatus.closed.toLocaleString()}</span> 已结案
+                <span className="font-semibold">{stats?.byStatus?.closed?.toLocaleString() || '0'}</span> 已结案
               </p>
             </CardContent>
           </Card>
@@ -216,7 +373,12 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent className="relative z-10">
               <div className="space-y-4">
-                {recentCases.map((case_, index) => (
+                {recentCases.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    {statsLoading ? '加载中...' : '暂无最近案例'}
+                  </div>
+                ) : (
+                  recentCases.map((case_, index) => (
                   <div key={case_.id} className="flex items-center justify-between space-x-4 p-3 rounded-lg bg-gradient-to-r from-white/50 to-white/30 dark:from-white/5 dark:to-white/10 hover:from-white/70 hover:to-white/50 dark:hover:from-white/10 dark:hover:to-white/15 transition-all duration-200 border border-white/20">
                     <div className="flex items-center space-x-3">
                       <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold">
@@ -238,7 +400,8 @@ export default function DashboardPage() {
                       </Badge>
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
@@ -259,8 +422,11 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent className="relative z-10">
               <div className="space-y-4">
-                {Object.entries(stats.byCaseType).map(([type, count], index) => {
-                  const percentage = (count / stats.totalCases * 100).toFixed(1);
+                {statsLoading ? (
+                  <div className="text-center py-8 text-muted-foreground">加载中...</div>
+                ) : stats?.byCaseType ? (
+                  Object.entries(stats.byCaseType).map(([type, count], index) => {
+                    const percentage = stats.totalCases > 0 ? (count / stats.totalCases * 100).toFixed(1) : '0';
                   const colors = [
                     'from-blue-500 to-blue-600',
                     'from-green-500 to-green-600', 
@@ -286,8 +452,11 @@ export default function DashboardPage() {
                         </span>
                       </div>
                     </div>
-                  );
-                })}
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">暂无数据</div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -314,7 +483,10 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="relative z-10">
             <div className="grid gap-4 md:grid-cols-5">
-              {Object.entries(stats.byProvince).map(([province, count], index) => {
+              {statsLoading ? (
+                <div className="col-span-5 text-center py-8 text-muted-foreground">加载中...</div>
+              ) : stats?.byProvince ? (
+                Object.entries(stats.byProvince).map(([province, count], index) => {
                 const colors = [
                   'from-blue-500 to-blue-600',
                   'from-green-500 to-green-600', 
@@ -331,7 +503,133 @@ export default function DashboardPage() {
                     <div className={`w-full h-1 bg-gradient-to-r ${colors[index % colors.length]} rounded-full mt-2 opacity-60 group-hover:opacity-100 transition-opacity duration-200`} />
                   </div>
                 );
-              })}
+                })
+              ) : (
+                <div className="col-span-5 text-center py-8 text-muted-foreground">暂无数据</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 组织数据详情 */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>组织数据详情</CardTitle>
+                <CardDescription>
+                  查看各组织的详细统计信息
+                </CardDescription>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={loadOrgStats}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  刷新
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {/* 选择操作按钮 */}
+            <div className="flex items-center space-x-2 mb-4">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleSelectAll}
+              >
+                {selectAll ? (
+                  <CheckSquare className="mr-2 h-4 w-4" />
+                ) : (
+                  <Square className="mr-2 h-4 w-4" />
+                )}
+                {selectAll ? '全不选' : '全选'}
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleInvertSelection}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                反选
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={downloadSelected}
+                disabled={selectedRows.length === 0 || loading}
+              >
+                {loading ? (
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                下载选中 ({selectedRows.length})
+              </Button>
+            </div>
+
+            {/* 组织数据表格 */}
+            <div className="border rounded-lg">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="p-3 text-left font-medium">选择</th>
+                      <th className="p-3 text-left font-medium">组织名称</th>
+                      <th className="p-3 text-center font-medium">概要案例数</th>
+                      <th className="p-3 text-center font-medium">概要链接数</th>
+                      <th className="p-3 text-center font-medium">详情案例数</th>
+                      <th className="p-3 text-center font-medium">详情链接数</th>
+                      <th className="p-3 text-center font-medium">最早日期</th>
+                      <th className="p-3 text-center font-medium">最晚日期</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.isArray(orgStats) && orgStats.map((org, index) => (
+                      <tr key={org.organization} className="border-b hover:bg-muted/50">
+                        <td className="p-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedRows.includes(index)}
+                            onChange={() => handleRowSelect(index)}
+                            className="rounded border-gray-300"
+                          />
+                        </td>
+                        <td className="p-3 font-medium">{org.organization}</td>
+                        <td className="p-3 text-center">{org.summary_stats.total_cases}</td>
+                        <td className="p-3 text-center">{org.summary_stats.link_count}</td>
+                        <td className="p-3 text-center">{org.detail_stats.total_cases}</td>
+                        <td className="p-3 text-center">{org.detail_stats.link_count}</td>
+                        <td className="p-3 text-center text-sm text-muted-foreground">
+                          {org.summary_stats.min_date || '-'}
+                        </td>
+                        <td className="p-3 text-center text-sm text-muted-foreground">
+                          {org.summary_stats.max_date || '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {Array.isArray(orgStats) && orgStats.length === 0 && !isLoading && (
+                <div className="p-8 text-center text-muted-foreground">
+                  暂无数据
+                </div>
+              )}
+              {isLoading && (
+                <div className="p-8 text-center text-muted-foreground">
+                  <RefreshCw className="mx-auto h-6 w-6 animate-spin mb-2" />
+                  加载中...
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

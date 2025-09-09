@@ -238,3 +238,55 @@ class CaseService:
         )
         
         return result.modified_count
+    
+    async def get_recent_cases(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent cases for dashboard"""
+        cursor = self.collection.find().sort("created_at", -1).limit(limit)
+        cases = await cursor.to_list(length=limit)
+        
+        result = []
+        for case in cases:
+            result.append({
+                "id": str(case["_id"]),
+                "caseNumber": case.get("case_number", ""),
+                "title": case.get("title", ""),
+                "organization": case.get("organization", ""),
+                "province": case.get("province", ""),
+                "caseType": case.get("case_type", ""),
+                "penaltyAmount": case.get("penalty_amount", 0),
+                "penaltyDate": case.get("penalty_date").isoformat() if case.get("penalty_date") else None,
+                "status": case.get("status", ""),
+                "createdAt": case.get("created_at").isoformat() if case.get("created_at") else None
+            })
+        
+        return result
+    
+    async def get_organizations(self) -> List[Dict[str, Any]]:
+        """Get list of organizations with case counts"""
+        pipeline = [
+            {
+                "$group": {
+                    "_id": "$organization",
+                    "caseCount": {"$sum": 1},
+                    "totalPenalty": {"$sum": "$penalty_amount"},
+                    "avgPenalty": {"$avg": "$penalty_amount"},
+                    "provinces": {"$addToSet": "$province"}
+                }
+            },
+            {"$sort": {"caseCount": -1}}
+        ]
+        
+        result = await self.collection.aggregate(pipeline).to_list(None)
+        
+        organizations = []
+        for org in result:
+            if org["_id"]:  # Skip null organization names
+                organizations.append({
+                    "name": org["_id"],
+                    "caseCount": org["caseCount"],
+                    "totalPenalty": org["totalPenalty"] or 0,
+                    "avgPenalty": org["avgPenalty"] or 0,
+                    "provinces": org["provinces"]
+                })
+        
+        return organizations

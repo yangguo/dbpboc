@@ -1,54 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useApiCallDeduplication } from "@/hooks/useDebounce";
 import { MainLayout } from "@/components/layout/main-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, Upload, Download } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { RefreshCw, Upload, Database } from "lucide-react";
 import { config } from "@/lib/config";
 
-type OrgStats = {
-  organization: string;
-  summary_stats: {
-    total_cases: number;
-    link_count: number;
-    min_date: string | null;
-    max_date: string | null;
-  };
-  detail_stats: {
-    total_cases: number;
-    link_count: number;
-    min_date: string | null;
-    max_date: string | null;
-  };
-};
-
 export default function UplinkPage() {
-  const [orgs, setOrgs] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [stats, setStats] = useState<OrgStats[]>([]);
-  const [uplinkInfo, setUplinkInfo] = useState<any>(null);
+  const [uplinkInfo, setUplinkInfo] = useState<{
+    sum?: { total_cases: number; link_count: number; min_date: string; max_date: string };
+    dtl?: { total_cases: number; link_count: number; uid_count: number; min_date: string; max_date: string };
+    cat?: { total_cases: number; link_count: number; uid_count: number; min_date: string; max_date: string };
+    collection?: { size: number; pending: number };
+  } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Load organizations
-  useEffect(() => {
-    (async () => {
-      try {
-        const resp = await fetch(`${config.backendUrl}/api/v1/attachments/organizations`);
-        if (resp.ok) {
-          const data: string[] = await resp.json();
-          setOrgs(data || []);
-        }
-      } catch {
-        /* noop */
-      }
-    })();
-  }, []);
-
   const loadUplinkInfoInternal = async () => {
+    setLoading(true);
     try {
       const resp = await fetch(`${config.backendUrl}/api/v1/uplink/info`);
       if (resp.ok) {
@@ -57,27 +30,6 @@ export default function UplinkPage() {
       }
     } catch {
       // ignore
-    }
-  };
-
-  // Load per-organization stats, then aggregate to mimic Streamlit uplink overview
-  const reloadStatsInternal = async () => {
-    if (!orgs.length) return;
-    setLoading(true);
-    try {
-      const results: OrgStats[] = [];
-      for (const org of orgs) {
-        try {
-          const resp = await fetch(`${config.backendUrl}/api/v1/stats/${encodeURIComponent(org)}`);
-          if (resp.ok) {
-            const data = await resp.json();
-            results.push(data as OrgStats);
-          }
-        } catch {
-          // ignore a single org failure
-        }
-      }
-      setStats(results);
     } finally {
       setLoading(false);
     }
@@ -85,84 +37,65 @@ export default function UplinkPage() {
 
   // 使用防重复调用的hook
   const loadUplinkInfo = useApiCallDeduplication(loadUplinkInfoInternal, 'loadUplinkInfo', 2000);
-  const reloadStats = useApiCallDeduplication(reloadStatsInternal, 'reloadStats', 2000);
+
+  const reloadWithFeedback = async () => {
+    try {
+      await loadUplinkInfo();
+    } catch (error) {
+      console.error('Error reloading uplink info:', error);
+      alert('重新加载数据失败，请重试');
+    }
+  };
 
   useEffect(() => {
-    // initial load when orgs list arrives
-    if (orgs.length) reloadStats();
     loadUplinkInfo();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgs.length]); // 只依赖orgs的长度，避免数组引用变化导致的重复调用
-  const agg = useMemo(() => {
-    // Aggregate counts and date ranges across orgs
-    const sumCount = stats.reduce((acc, s) => acc + (s.summary_stats?.total_cases || 0), 0);
-    const dtlCount = stats.reduce((acc, s) => acc + (s.detail_stats?.total_cases || 0), 0);
-    const sumUnique = stats.reduce((acc, s) => acc + (s.summary_stats?.link_count || 0), 0);
-    const dtlUnique = stats.reduce((acc, s) => acc + (s.detail_stats?.link_count || 0), 0);
-
-    const sumDates = stats
-      .map(s => ({ min: s.summary_stats?.min_date, max: s.summary_stats?.max_date }))
-      .filter(x => x.min && x.max) as { min: string; max: string }[];
-    const dtlDates = stats
-      .map(s => ({ min: s.detail_stats?.min_date, max: s.detail_stats?.max_date }))
-      .filter(x => x.min && x.max) as { min: string; max: string }[];
-
-    const min = (dates: { min: string; max: string }[]) =>
-      dates.length ? dates.map(d => d.min).sort()[0] : null;
-    const max = (dates: { min: string; max: string }[]) =>
-      dates.length ? dates.map(d => d.max).sort().slice(-1)[0] : null;
-
-    return {
-      sumCount,
-      dtlCount,
-      sumUnique,
-      dtlUnique,
-      sumMin: min(sumDates),
-      sumMax: max(sumDates),
-      dtlMin: min(dtlDates),
-      dtlMax: max(dtlDates),
-    };
-  }, [stats]);
-
-  const downloadAll = async (datasets: string[]) => {
-    if (!datasets.length) return;
-    try {
-      const params = new URLSearchParams();
-      params.set("datasets", datasets.join(","));
-      const url = `${config.backendUrl}/api/v1/downloads/pboc-export?${params.toString()}`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error("下载失败");
-      const blob = await resp.blob();
-      const a = document.createElement("a");
-      const objectUrl = URL.createObjectURL(blob);
-      a.href = objectUrl;
-      a.download = `pboc_export_${new Date().toISOString().slice(0,10)}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(objectUrl);
-    } catch (e) {
-      console.error(e);
-      alert("下载失败，请重试");
-    }
-  };
+  }, []);
 
   const doUpdate = async () => {
+    const confirmed = window.confirm(
+      `确定要上线数据吗？\n\n` +
+      `此操作将把数据插入到 MongoDB 中，请确认。`
+    );
+
+    if (!confirmed) return;
+
     setBusy(true);
     try {
-      const resp = await fetch(`${config.backendUrl}/api/v1/uplink/update`, { method: 'POST' });
-      if (!resp.ok) throw new Error('更新失败');
-      await loadUplinkInfo();
-      alert('更新上线数据完成');
-    } catch (e) {
-      console.error(e);
-      alert('更新失败');
-    } finally {
-      setBusy(false);
-    }
-  };
+      const resp = await fetch(`${config.backendUrl}/api/v1/uplink/update`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-  // 删除上线数据操作已移除
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({}));
+        throw new Error(errorData.detail || '更新失败');
+      }
+
+      const result = await resp.json();
+      alert(
+        `✅ 数据上线成功！\n\n` +
+        `📊 插入记录: ${result.inserted || 0} 条\n` +
+        `⏱️ 处理时间: ${result.processing_time || 'N/A'}\n` +
+        `📅 更新时间: ${new Date().toLocaleString()}`
+      );
+
+      // 重新加载数据
+      await loadUplinkInfo();
+    } catch (e) {
+        console.error('更新失败:', e);
+        const errorMessage = e instanceof Error ? e.message : '未知错误';
+        alert(
+          `❌ 数据上线失败\n\n` +
+          `错误信息: ${errorMessage}\n` +
+          `请检查网络连接和后端服务状态，然后重试。`
+        );
+      } finally {
+        setBusy(false);
+      }
+    };
 
   const downloadMongo = async () => {
     try {
@@ -192,10 +125,40 @@ export default function UplinkPage() {
             <h1 className="text-3xl font-bold tracking-tight">案例上线</h1>
             <p className="text-muted-foreground">参考旧版“案例数据上线”视图，汇总当前本地CSV数据概况并提供导出/占位操作</p>
           </div>
-          <Button variant="outline" onClick={reloadStats} className="flex items-center gap-2">
+          <Button variant="outline" onClick={reloadWithFeedback} className="flex items-center gap-2">
             {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} 刷新
           </Button>
         </div>
+
+        {/* MongoDB 集合信息 */}
+        {uplinkInfo?.collection && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="text-lg">MongoDB 集合状态</CardTitle>
+              <CardDescription>pbocdtl 集合的当前状态</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">{uplinkInfo.collection.size || 0}</div>
+                  <p className="text-sm text-muted-foreground">已上线数据</p>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-orange-600">{uplinkInfo.collection.pending || 0}</div>
+                  <p className="text-sm text-muted-foreground">待更新数据</p>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">
+                    {uplinkInfo.collection.size > 0
+                      ? ((uplinkInfo.collection.size / (uplinkInfo.collection.size + uplinkInfo.collection.pending)) * 100).toFixed(1)
+                      : 0}%
+                  </div>
+                  <p className="text-sm text-muted-foreground">上线率</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
@@ -206,14 +169,14 @@ export default function UplinkPage() {
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2">
                 <Label>数据量</Label>
-                <Badge variant="secondary">{agg.sumCount}</Badge>
+                <Badge variant="secondary">{uplinkInfo?.sum?.total_cases ?? 0}</Badge>
               </div>
               <div className="flex items-center gap-2">
                 <Label>唯一ID数量</Label>
-                <Badge variant="outline">{agg.sumUnique}</Badge>
+                <Badge variant="outline">{uplinkInfo?.sum?.link_count ?? 0}</Badge>
               </div>
               <div className="text-sm text-muted-foreground">
-                日期范围：{agg.sumMin || "-"} ~ {agg.sumMax || "-"}
+                日期范围：{uplinkInfo?.sum?.min_date || "-"} ~ {uplinkInfo?.sum?.max_date || "-"}
               </div>
             </CardContent>
           </Card>
@@ -226,18 +189,18 @@ export default function UplinkPage() {
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2">
                 <Label>数据量</Label>
-                <Badge variant="secondary">{agg.dtlCount}</Badge>
+                <Badge variant="secondary">{uplinkInfo?.dtl?.total_cases ?? 0}</Badge>
               </div>
               <div className="flex items-center gap-2">
                 <Label>唯一ID数量</Label>
-                <Badge variant="outline">{agg.dtlUnique}</Badge>
+                <Badge variant="outline">{uplinkInfo?.dtl?.link_count ?? 0}</Badge>
               </div>
               <div className="flex items-center gap-2">
                 <Label>唯一UID数量</Label>
                 <Badge variant="outline">{uplinkInfo?.dtl?.uid_count ?? 0}</Badge>
               </div>
               <div className="text-sm text-muted-foreground">
-                日期范围：{agg.dtlMin || "-"} ~ {agg.dtlMax || "-"}
+                日期范围：{uplinkInfo?.dtl?.min_date || "-"} ~ {uplinkInfo?.dtl?.max_date || "-"}
               </div>
             </CardContent>
           </Card>
@@ -278,17 +241,17 @@ export default function UplinkPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Button onClick={doUpdate} disabled={busy} className="flex items-center gap-2">
-                {busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} 更新上线数据
+                {busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} 上线数据到 MongoDB
               </Button>
-              <Button onClick={downloadMongo} variant="outline" className="flex items-center gap-2">
-                <Download className="h-4 w-4" /> 下载上线数据（Mongo）
+              <Button onClick={downloadMongo} variant="outline" disabled={loading} className="flex items-center gap-2">
+                {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />} 导出 MongoDB 数据
               </Button>
             </div>
             <div className="my-2 h-px bg-border" />
             <p className="text-sm text-muted-foreground">
-              说明：已对齐旧版 Streamlit 的“案例数据上线”能力：基于本地 CSV 计算增量并写入 Mongo（pbocdtl 集合）、支持导出。若 CSV 目录或数据库配置变更，请在 backend/.env 中调整相关环境变量。
+              说明：已对齐旧版 Streamlit 的&quot;案例数据上线&quot;能力：基于本地 CSV 计算增量并写入 Mongo（pbocdtl 集合）、支持导出。若 CSV 目录或数据库配置变更，请在 backend/.env 中调整相关环境变量。
             </p>
           </CardContent>
         </Card>
