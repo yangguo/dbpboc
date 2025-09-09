@@ -139,7 +139,10 @@ async def export_pboc(
                     sum_filtered = sum_filtered.copy()
                     sum_filtered["发布日期"] = dates.dt.date
             logger.info(f"[downloads] sum_filtered shape={getattr(sum_filtered, 'shape', None)}")
-            outputs.append((f"pbocsum_{region_tag}_{date_tag}.csv", sum_filtered.to_csv(index=False)))
+            # 使用UTF-8 BOM编码以确保中文在Excel中正确显示
+            csv_content = sum_filtered.to_csv(index=False)
+            csv_with_bom = '\ufeff' + csv_content
+            outputs.append((f"pbocsum_{region_tag}_{date_tag}.csv", csv_with_bom))
 
         if "pbocdtl" in requested:
             if df_dtl.empty:
@@ -167,7 +170,10 @@ async def export_pboc(
                     dtl_filtered = dtl_filtered.copy()
                     dtl_filtered["发布日期"] = dates.dt.date
             logger.info(f"[downloads] dtl_filtered shape={getattr(dtl_filtered, 'shape', None)}")
-            outputs.append((f"pbocdtl_{region_tag}_{date_tag}.csv", dtl_filtered.to_csv(index=False)))
+            # 使用UTF-8 BOM编码以确保中文在Excel中正确显示
+            csv_content = dtl_filtered.to_csv(index=False)
+            csv_with_bom = '\ufeff' + csv_content
+            outputs.append((f"pbocdtl_{region_tag}_{date_tag}.csv", csv_with_bom))
 
         if "pboccat" in requested:
             # Join with sum to get 区域/日期 via link
@@ -212,9 +218,15 @@ async def export_pboc(
                         cat_out = cat_out[cat_out["province"].astype(str).apply(lambda v: any(r in v for r in region_list))]
                     # No reliable date filter without join
                 logger.info(f"[downloads] cat_out shape={getattr(cat_out, 'shape', None)}")
-                outputs.append((f"pboccat_{region_tag}_{date_tag}.csv", cat_out.to_csv(index=False)))
+                # 使用UTF-8 BOM编码以确保中文在Excel中正确显示
+                csv_content = cat_out.to_csv(index=False)
+                csv_with_bom = '\ufeff' + csv_content
+                outputs.append((f"pboccat_{region_tag}_{date_tag}.csv", csv_with_bom))
             else:
-                outputs.append((f"pboccat_{region_tag}_{date_tag}.csv", pd.DataFrame().to_csv(index=False)))
+                # 使用UTF-8 BOM编码以确保中文在Excel中正确显示
+                csv_content = pd.DataFrame().to_csv(index=False)
+                csv_with_bom = '\ufeff' + csv_content
+                outputs.append((f"pboccat_{region_tag}_{date_tag}.csv", csv_with_bom))
 
         # Build ZIP in-memory
         mem_zip = BytesIO()

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
+from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import pandas as pd
 import glob
@@ -202,10 +203,18 @@ async def uplink_export():
             d.pop("_id", None)
             docs.append(d)
         df = pd.DataFrame(docs)
-        csv = df.to_csv(index=False).encode("utf-8") if not df.empty else "".encode()
+        # 使用UTF-8 BOM编码以确保中文在Excel中正确显示
+        if not df.empty:
+            csv_content = df.to_csv(index=False)
+            csv_bytes = '\ufeff'.encode('utf-8') + csv_content.encode('utf-8')
+        else:
+            csv_bytes = '\ufeff'.encode('utf-8')
         filename = f"uplink_pbocdtl_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
-        headers = {"Content-Disposition": f"attachment; filename={filename}"}
-        return Response(content=csv, media_type="text/csv", headers=headers)
+        # 使用RFC 5987格式的文件名编码以支持中文文件名
+        from urllib.parse import quote
+        safe_filename = quote(filename.encode('utf-8'), safe='')
+        headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}"}
+        return Response(content=csv_bytes, media_type="text/csv; charset=utf-8", headers=headers)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -336,11 +345,57 @@ async def uplink_pending():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/export-pending")
+async def uplink_export_pending():
+    """Export all pending records as CSV."""
+    try:
+        await _ensure_db()
+        database = await get_database()
+        col = database["pbocdtl"]
+        
+        # 获取本地CSV数据
+        dtllink = _build_dtllink_df()
+        
+        if dtllink.empty or "link" not in dtllink.columns:
+            raise HTTPException(status_code=404, detail="No pending data available")
+        
+        # 获取MongoDB中已存在的link列表
+        existing_links = []
+        async for doc in col.find({"link": {"$exists": True, "$ne": None}}, {"link": 1}):
+            if doc.get("link"):
+                existing_links.append(doc["link"])
+        
+        # 筛选出本地CSV中存在但MongoDB中不存在的记录
+        pending_mask = ~dtllink["link"].isin(existing_links)
+        pending_df = dtllink[pending_mask]
+        
+        if pending_df.empty:
+            raise HTTPException(status_code=404, detail="No pending records found")
+        
+        # 转换为CSV，使用UTF-8 BOM编码以确保中文在Excel中正确显示
+        csv_content = pending_df.to_csv(index=False)
+        # 添加UTF-8 BOM标记，确保Excel等软件正确识别中文编码
+        csv_bytes = '\ufeff'.encode('utf-8') + csv_content.encode('utf-8')
+        filename = f"pending_data_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+        # 使用RFC 5987格式的文件名编码以支持中文文件名
+        from urllib.parse import quote
+        safe_filename = quote(filename.encode('utf-8'), safe='')
+        headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}"}
+        return Response(content=csv_bytes, media_type="text/csv; charset=utf-8", headers=headers)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ExportSelectedRequest(BaseModel):
+    selected_ids: List[str]
+
 @router.post("/export-selected")
-async def uplink_export_selected(selected_ids: List[str] = None):
+async def uplink_export_selected(request: ExportSelectedRequest):
     """Export selected pending records as CSV."""
     try:
-        if selected_ids is None:
+        if not request.selected_ids:
             raise HTTPException(status_code=400, detail="No selected IDs provided")
         
         # 获取本地CSV数据
@@ -349,17 +404,47 @@ async def uplink_export_selected(selected_ids: List[str] = None):
         if dtllink.empty or "link" not in dtllink.columns:
             raise HTTPException(status_code=404, detail="No pending data available")
         
-        # 筛选出选中的记录
-        selected_df = dtllink[dtllink["link"].isin(selected_ids)]
+        # 筛选出选中的记录 - 支持uid、id或索引
+        selected_df = pd.DataFrame()
+        
+        for selected_id in request.selected_ids:
+            # 尝试按uid匹配
+            if "uid" in dtllink.columns:
+                uid_match = dtllink[dtllink["uid"] == selected_id]
+                if not uid_match.empty:
+                    selected_df = pd.concat([selected_df, uid_match], ignore_index=True)
+                    continue
+            
+            # 尝试按id匹配
+            if "id" in dtllink.columns:
+                id_match = dtllink[dtllink["id"] == selected_id]
+                if not id_match.empty:
+                    selected_df = pd.concat([selected_df, id_match], ignore_index=True)
+                    continue
+            
+            # 尝试按索引匹配 (格式: index-N)
+            if selected_id.startswith("index-"):
+                try:
+                    index_num = int(selected_id.split("-")[1])
+                    if 0 <= index_num < len(dtllink):
+                        index_match = dtllink.iloc[[index_num]]
+                        selected_df = pd.concat([selected_df, index_match], ignore_index=True)
+                except (ValueError, IndexError):
+                    continue
         
         if selected_df.empty:
             raise HTTPException(status_code=404, detail="No matching records found")
         
-        # 转换为CSV
-        csv = selected_df.to_csv(index=False).encode("utf-8")
+        # 转换为CSV，使用UTF-8 BOM编码以确保中文在Excel中正确显示
+        csv_content = selected_df.to_csv(index=False)
+        # 添加UTF-8 BOM标记，确保Excel等软件正确识别中文编码
+        csv_bytes = '\ufeff'.encode('utf-8') + csv_content.encode('utf-8')
         filename = f"selected_pending_data_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
-        headers = {"Content-Disposition": f"attachment; filename={filename}"}
-        return Response(content=csv, media_type="text/csv", headers=headers)
+        # 使用RFC 5987格式的文件名编码以支持中文文件名
+        from urllib.parse import quote
+        safe_filename = quote(filename.encode('utf-8'), safe='')
+        headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}"}
+        return Response(content=csv_bytes, media_type="text/csv; charset=utf-8", headers=headers)
     except HTTPException:
         raise
     except Exception as e:
