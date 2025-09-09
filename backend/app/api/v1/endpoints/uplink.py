@@ -41,7 +41,7 @@ def _read_csvs(folder: str, prefix: str) -> pd.DataFrame:
 
 
 def _build_dtllink_df() -> pd.DataFrame:
-    """Mirror legacy uplink shaping: select columns, strip spaces, add 发布日期 from date."""
+    """Mirror legacy uplink shaping: select columns, strip spaces, add 发布日期 from date, filter uid and join pboccat."""
     dtl = _read_csvs(PBOC_DATA_PATH, "pbocdtl")
     if dtl.empty:
         return pd.DataFrame()
@@ -52,26 +52,59 @@ def _build_dtllink_df() -> pd.DataFrame:
         "行政处罚内容",
         "作出行政处罚决定机关名称",
         "作出行政处罚决定日期",
-        "备注",
         "区域",
         "link",
         "name",
         "date",
+        "uid",
     ]
     # Intersect available columns
     available = [c for c in cols if c in dtl.columns]
     dtllink = dtl[available].copy()
+    
     # 统一 文号列为字符串
     if "处罚决定书文号" in dtllink.columns:
         dtllink.loc[:, "处罚决定书文号"] = dtllink["处罚决定书文号"].astype(str)
-    # 去掉空白
+    
+    # 在pboccat关联之前过滤掉uid为空的记录（与前端逻辑保持一致）
+    if "uid" in dtllink.columns:
+        dtllink = dtllink.dropna(subset=["uid"])
+        # 过滤掉uid为空字符串的记录
+        dtllink = dtllink[dtllink["uid"].astype(str).str.strip() != ""]
+    
+    # 左关联pboccat数据，增加amount、category、province、industry字段
+    if "uid" in dtllink.columns:
+        try:
+            cat_df = _read_csvs(PBOC_DATA_PATH, "pboccat")
+            if not cat_df.empty and "uid" in cat_df.columns:
+                # 选择需要的pboccat字段
+                cat_cols = ["uid", "amount", "category", "province", "industry"]
+                available_cat_cols = [c for c in cat_cols if c in cat_df.columns]
+                cat_subset = cat_df[available_cat_cols].copy()
+                
+                # 过滤掉uid为空的pboccat记录
+                cat_subset = cat_subset.dropna(subset=["uid"])
+                cat_subset = cat_subset[cat_subset["uid"].astype(str).str.strip() != ""]
+                
+                # 去重pboccat数据（保留第一条记录）
+                cat_subset = cat_subset.drop_duplicates(subset=["uid"], keep="first")
+                
+                # 左关联
+                dtllink = dtllink.merge(cat_subset, on="uid", how="left")
+        except Exception as e:
+            # 如果关联失败，继续处理但不添加pboccat字段
+            pass
+    
+    # 去掉空白（在关联之后处理，避免影响关联效果）
     dtllink = dtllink.map(lambda x: re.sub(r"\s+", "", x) if isinstance(x, str) else x)
+    
     # 发布日期
     if "date" in dtllink.columns:
         try:
             dtllink["发布日期"] = pd.to_datetime(dtllink["date"], errors="coerce").dt.strftime("%Y-%m-%d")
         except Exception:
             dtllink["发布日期"] = None
+    
     return dtllink
 
 
@@ -186,6 +219,59 @@ async def uplink_info():
             "dtl": dtl_stats,
             "cat": cat_stats,
             "collection": {"name": "pbocdtl", "size": collection_size, "pending": pending},
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/null-stats")
+async def uplink_null_stats():
+    """Return null value statistics for each field in pending data."""
+    try:
+        # 获取待上线数据
+        dtllink = _build_dtllink_df()
+        
+        if dtllink.empty:
+            return {"null_stats": {}, "total_records": 0}
+        
+        # 获取MongoDB中已存在的link列表
+        await _ensure_db()
+        database = await get_database()
+        col = database["pbocdtl"]
+        existing_links = []
+        async for doc in col.find({"link": {"$exists": True, "$ne": None}}, {"link": 1}):
+            if doc.get("link"):
+                existing_links.append(doc["link"])
+        
+        # 过滤出待上线数据（本地存在但MongoDB中不存在的数据）
+        if "link" in dtllink.columns:
+            pending_mask = ~dtllink["link"].isin(existing_links)
+            pending_data = dtllink[pending_mask]
+        else:
+            pending_data = dtllink
+        
+        if pending_data.empty:
+            return {"null_stats": {}, "total_records": 0}
+        
+        # 统计每个字段的空值数量
+        null_stats = {}
+        total_records = len(pending_data)
+        
+        for column in pending_data.columns:
+            # 统计空值（包括None、NaN、空字符串）
+            null_count = pending_data[column].isnull().sum()
+            empty_string_count = (pending_data[column] == "").sum() if pending_data[column].dtype == 'object' else 0
+            total_null = int(null_count + empty_string_count)
+            
+            null_stats[column] = {
+                "null_count": total_null,
+                "null_percentage": round((total_null / total_records) * 100, 2) if total_records > 0 else 0,
+                "non_null_count": total_records - total_null
+            }
+        
+        return {
+            "null_stats": null_stats,
+            "total_records": total_records
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

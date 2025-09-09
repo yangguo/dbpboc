@@ -21,6 +21,11 @@ interface PendingRecord {
   发布日期?: string;
   区域?: string;
   link?: string;
+  uid?: string;
+  amount?: number;
+  category?: string;
+  province?: string;
+  industry?: string;
   [key: string]: any;
 }
 
@@ -36,6 +41,11 @@ export default function UplinkPage() {
   const [pendingData, setPendingData] = useState<PendingRecord[]>([]);
   const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
   const [loadingPending, setLoadingPending] = useState(false);
+  const [nullStats, setNullStats] = useState<{
+    null_stats: Record<string, { null_count: number; null_percentage: number; non_null_count: number }>;
+    total_records: number;
+  } | null>(null);
+  const [loadingNullStats, setLoadingNullStats] = useState(false);
 
   const loadUplinkInfoInternal = async () => {
     setLoading(true);
@@ -69,6 +79,22 @@ export default function UplinkPage() {
     }
   };
 
+  const loadNullStats = async () => {
+    setLoadingNullStats(true);
+    try {
+      const resp = await fetch(`${config.backendUrl}/api/v1/uplink/null-stats`);
+      if (resp.ok) {
+        const data = await resp.json();
+        setNullStats(data);
+      }
+    } catch (error) {
+      console.error('加载空值统计失败:', error);
+      setNullStats(null);
+    } finally {
+      setLoadingNullStats(false);
+    }
+  };
+
   // 使用防重复调用的hook
   const loadUplinkInfo = useApiCallDeduplication(loadUplinkInfoInternal, 'loadUplinkInfo', 2000);
 
@@ -76,6 +102,7 @@ export default function UplinkPage() {
     try {
       await loadUplinkInfo();
       await loadPendingData();
+      await loadNullStats();
     } catch (error) {
       console.error('Error reloading uplink info:', error);
       alert('重新加载数据失败，请重试');
@@ -140,6 +167,7 @@ export default function UplinkPage() {
   useEffect(() => {
     loadUplinkInfo();
     loadPendingData();
+    loadNullStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -214,6 +242,7 @@ export default function UplinkPage() {
       // 重新加载数据
       await loadUplinkInfo();
       await loadPendingData();
+      await loadNullStats();
     } catch (e) {
         console.error('更新失败:', e);
         const errorMessage = e instanceof Error ? e.message : '未知错误';
@@ -286,6 +315,50 @@ export default function UplinkPage() {
                   <p className="text-sm text-muted-foreground">上线率</p>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* 待上线数据字段空值统计 */}
+        {nullStats && nullStats.total_records > 0 && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center justify-between">
+                <span>待上线数据字段空值统计</span>
+                <Badge variant="outline">{nullStats.total_records} 条数据</Badge>
+              </CardTitle>
+              <CardDescription>统计待上线数据中每个字段的空值情况</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Object.entries(nullStats.null_stats).map(([field, stats]) => (
+                  <div key={field} className="border rounded-lg p-3">
+                    <div className="font-medium text-sm mb-2 truncate" title={field}>{field}</div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-red-600">空值:</span>
+                        <span className="font-mono">{stats.null_count} ({stats.null_percentage}%)</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-green-600">非空:</span>
+                        <span className="font-mono">{stats.non_null_count}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                        <div 
+                          className="bg-green-500 h-2 rounded-full transition-all duration-300" 
+                          style={{ width: `${((stats.non_null_count / nullStats.total_records) * 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {loadingNullStats && (
+                <div className="flex items-center justify-center py-4">
+                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                  <span className="text-sm text-muted-foreground">加载空值统计中...</span>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -415,6 +488,11 @@ export default function UplinkPage() {
                       <TableHead>违法行为类型</TableHead>
                       <TableHead>发布日期</TableHead>
                       <TableHead>区域</TableHead>
+                      <TableHead>UID</TableHead>
+                      <TableHead>金额</TableHead>
+                      <TableHead>类别</TableHead>
+                      <TableHead>省份</TableHead>
+                      <TableHead>行业</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -441,6 +519,21 @@ export default function UplinkPage() {
                         </TableCell>
                         <TableCell>
                           {record.区域 || '-'}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {record.uid || '-'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {record.amount ? record.amount.toLocaleString() : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {record.category || '-'}
+                        </TableCell>
+                        <TableCell>
+                          {record.province || '-'}
+                        </TableCell>
+                        <TableCell>
+                          {record.industry || '-'}
                         </TableCell>
                       </TableRow>
                     ))}
