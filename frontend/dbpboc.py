@@ -1647,7 +1647,7 @@ def uplink_pbocsum():
                 },
                 disabled=[col for col in preview_df.columns if col != "选择"],
                 hide_index=True,
-                use_container_width=True,
+                width='stretch',
                 key="uplink_data_editor"
             )
             
@@ -1920,7 +1920,7 @@ def print_bar(x_data, y_data, y_axis_name, title):
     )
 
     # Display the chart
-    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun")
+    event = st.plotly_chart(fig, width='stretch', on_select="rerun")
 
     monthselected = event["selection"]["point_indices"]
 
@@ -1939,7 +1939,7 @@ def print_line(x_data, y_data, y_axis_name, title):
     fig = px.line(data, x="月份", y=y_axis_name, title=title, text=y_axis_name)
 
     # Display the chart
-    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun")
+    event = st.plotly_chart(fig, width='stretch', on_select="rerun")
 
     monthselected = event["selection"]["point_indices"]
 
@@ -1963,7 +1963,7 @@ def print_pie(namels, valuels, title):
     )
     fig.update_traces(textinfo="label+percent", insidetextorientation="radial")
     # Display the chart
-    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun")
+    event = st.plotly_chart(fig, width='stretch', on_select="rerun")
 
     monthselected = event["selection"]["point_indices"]
 
@@ -2014,7 +2014,7 @@ def print_map(province_name, province_values, title_name):
     fig.update_layout(title_text=title_name, title_x=0.5)
 
     # Display the chart in Streamlit
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
     return fig
 
 
