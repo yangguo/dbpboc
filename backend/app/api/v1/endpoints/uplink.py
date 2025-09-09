@@ -78,8 +78,8 @@ def _stats_for_df(df: pd.DataFrame) -> Dict[str, Any]:
     if df is None or df.empty:
         return {"total_cases": 0, "link_count": 0, "uid_count": 0, "min_date": None, "max_date": None}
     total = len(df)
-    link_count = df["link"].nunique() if "link" in df.columns else 0
-    uid_count = df["uid"].nunique() if "uid" in df.columns else 0
+    link_count = int(df["link"].nunique()) if "link" in df.columns else 0
+    uid_count = int(df["uid"].nunique()) if "uid" in df.columns else 0
     min_date = None
     max_date = None
     for c in ["发布日期", "date", "publish_date"]:
@@ -114,7 +114,7 @@ def _stats_for_cat(df_cat: pd.DataFrame, df_sum: Optional[pd.DataFrame] = None) 
     uid_count = 0
     if link_col is not None:
         try:
-            id_count = df_cat[link_col].dropna().nunique()
+            id_count = int(df_cat[link_col].dropna().nunique())
         except Exception:
             id_count = 0
 
@@ -162,13 +162,23 @@ async def uplink_info():
         col = database["pbocdtl"]
         collection_size = await col.count_documents({})
 
-        # pending by comparing links
+        # pending by comparing links: 本地CSV中存在但MongoDB中不存在的link
         dtllink = _build_dtllink_df()
         pending = 0
+        
+        # 获取MongoDB中已存在的link列表
+        existing_links = []
+        async for doc in col.find({"link": {"$exists": True, "$ne": None}}, {"link": 1}):
+            if doc.get("link"):
+                existing_links.append(doc["link"])
+        
+        # 计算待更新数据量：本地CSV中存在但MongoDB中不存在的链接数量
+        # 使用与frontend相同的逻辑: dtllink[~dtllink["link"].isin(olddf["link"])]
         if not dtllink.empty and "link" in dtllink.columns:
-            links = dtllink["link"].dropna().unique().tolist()
-            existing = await col.count_documents({"link": {"$in": links}})
-            pending = max(0, len(links) - int(existing))
+            pending_mask = ~dtllink["link"].isin(existing_links)
+            pending = int(pending_mask.sum())
+        else:
+            pending = 0
 
         return {
             "sum": sum_stats,
@@ -248,5 +258,44 @@ async def uplink_update():
             res = await col.insert_many(to_insert)
             inserted = len(res.inserted_ids)
         return {"inserted": inserted, "skipped": len(links) - inserted}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/pending")
+async def uplink_pending():
+    """Return pending records: MongoDB中存在但本地CSV中不存在的记录."""
+    try:
+        await _ensure_db()
+        database = await get_database()
+        col = database["pbocdtl"]
+        
+        # 获取本地CSV数据
+        dtllink = _build_dtllink_df()
+        
+        if dtllink.empty or "link" not in dtllink.columns:
+            return {"records": [], "count": 0}
+        
+        # 获取MongoDB中已存在的link列表
+        existing_links = []
+        async for doc in col.find({"link": {"$exists": True, "$ne": None}}, {"link": 1}):
+            if doc.get("link"):
+                existing_links.append(doc["link"])
+        
+        # 筛选出本地CSV中存在但MongoDB中不存在的记录
+        # 使用与frontend相同的逻辑: dtllink[~dtllink["link"].isin(olddf["link"])]
+        pending_mask = ~dtllink["link"].isin(existing_links)
+        pending_df = dtllink[pending_mask]
+        
+        # 转换为字典列表，处理NaN值
+        pending_records = []
+        for _, row in pending_df.iterrows():
+            record = {k: (None if pd.isna(v) else v) for k, v in row.to_dict().items()}
+            pending_records.append(record)
+        
+        return {
+            "records": pending_records,
+            "count": len(pending_records)
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
