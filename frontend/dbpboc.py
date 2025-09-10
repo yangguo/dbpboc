@@ -1594,8 +1594,8 @@ def uplink_pbocsum():
         delete_data(collection)
         st.success("上线案例数据删除成功！")
 
-    # get update data based on link
-    updf = dtllink[~dtllink["link"].isin(olddf["link"])]
+    # get update data based on uid
+    updf = dtllink[~dtllink["uid"].isin(olddf["uid"])]
     # display update data
     st.write("待更新上线数据量: " + str(len(updf)))
     

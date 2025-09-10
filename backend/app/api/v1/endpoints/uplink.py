@@ -328,20 +328,20 @@ async def uplink_info():
         col = database["pbocdtl"]
         collection_size = await col.count_documents({})
 
-        # pending by comparing links: 本地CSV中存在但MongoDB中不存在的link
+        # pending by comparing uids: 本地CSV中存在但MongoDB中不存在的uid
         dtllink = _build_dtllink_df()
         pending = 0
         
-        # 获取MongoDB中已存在的link列表
-        existing_links = []
-        async for doc in col.find({"link": {"$exists": True, "$ne": None}}, {"link": 1}):
-            if doc.get("link"):
-                existing_links.append(doc["link"])
+        # 获取MongoDB中已存在的uid列表
+        existing_uids = []
+        async for doc in col.find({"uid": {"$exists": True, "$ne": None}}, {"uid": 1}):
+            if doc.get("uid"):
+                existing_uids.append(doc["uid"])
         
-        # 计算待更新数据量：本地CSV中存在但MongoDB中不存在的链接数量
-        # 使用与frontend相同的逻辑: dtllink[~dtllink["link"].isin(olddf["link"])]
-        if not dtllink.empty and "link" in dtllink.columns:
-            pending_mask = ~dtllink["link"].isin(existing_links)
+        # 计算待更新数据量：本地CSV中存在但MongoDB中不存在的uid数量
+        # 使用与frontend相同的逻辑: dtllink[~dtllink["uid"].isin(olddf["uid"])]
+        if not dtllink.empty and "uid" in dtllink.columns:
+            pending_mask = ~dtllink["uid"].isin(existing_uids)
             pending = int(pending_mask.sum())
         else:
             pending = 0
@@ -368,18 +368,18 @@ async def uplink_null_stats():
         if dtllink.empty:
             return {"null_stats": {}, "total_records": 0}
         
-        # 获取MongoDB中已存在的link列表
+        # 获取MongoDB中已存在的uid列表
         await _ensure_db()
         database = await get_database()
         col = database["pbocdtl"]
-        existing_links = []
-        async for doc in col.find({"link": {"$exists": True, "$ne": None}}, {"link": 1}):
-            if doc.get("link"):
-                existing_links.append(doc["link"])
+        existing_uids = []
+        async for doc in col.find({"uid": {"$exists": True, "$ne": None}}, {"uid": 1}):
+            if doc.get("uid"):
+                existing_uids.append(doc["uid"])
         
         # 过滤出待上线数据（本地存在但MongoDB中不存在的数据）
-        if "link" in dtllink.columns:
-            pending_mask = ~dtllink["link"].isin(existing_links)
+        if "uid" in dtllink.columns:
+            pending_mask = ~dtllink["uid"].isin(existing_uids)
             pending_data = dtllink[pending_mask]
         else:
             pending_data = dtllink
@@ -490,28 +490,28 @@ async def uplink_update(request: UplinkUpdateRequest):
             logger.info("处理所有待处理记录（向后兼容模式）")
             processing_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] 处理所有待处理记录（向后兼容模式）")
             
-            # existing links
-            links = dtllink["link"].dropna().unique().tolist() if "link" in dtllink.columns else []
-            logger.info(f"找到 {len(links)} 个唯一链接")
-            processing_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] 找到 {len(links)} 个唯一链接")
+            # existing uids
+            uids = dtllink["uid"].dropna().unique().tolist() if "uid" in dtllink.columns else []
+            logger.info(f"找到 {len(uids)} 个唯一uid")
+            processing_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] 找到 {len(uids)} 个唯一uid")
             
-            existing_links: set[str] = set()
-            if links:
+            existing_uids: set[str] = set()
+            if uids:
                 check_start = datetime.now()
-                cursor = col.find({"link": {"$in": links}}, {"link": 1, "_id": 0})
+                cursor = col.find({"uid": {"$in": uids}}, {"uid": 1, "_id": 0})
                 async for doc in cursor:
-                    if "link" in doc and doc["link"]:
-                        existing_links.add(doc["link"])
+                    if "uid" in doc and doc["uid"]:
+                        existing_uids.add(doc["uid"])
                 check_time = (datetime.now() - check_start).total_seconds()
-                logger.info(f"检查已存在链接完成，找到 {len(existing_links)} 个已存在，耗时: {check_time:.2f}秒")
-                processing_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] 检查已存在链接完成，找到 {len(existing_links)} 个已存在，耗时: {check_time:.2f}秒")
+                logger.info(f"检查已存在uid完成，找到 {len(existing_uids)} 个已存在，耗时: {check_time:.2f}秒")
+                processing_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] 检查已存在uid完成，找到 {len(existing_uids)} 个已存在，耗时: {check_time:.2f}秒")
 
             # build docs to insert
             build_start = datetime.now()
             to_insert: List[Dict[str, Any]] = []
             for _, row in dtllink.iterrows():
-                link = row.get("link")
-                if not link or link in existing_links:
+                uid = row.get("uid")
+                if not uid or uid in existing_uids:
                     continue
                 doc = {k: (None if (pd.isna(v)) else v) for k, v in row.to_dict().items()}
                 to_insert.append(doc)
@@ -531,8 +531,8 @@ async def uplink_update(request: UplinkUpdateRequest):
                 total_time = (datetime.now() - start_time).total_seconds()
                 return {
                     "inserted": inserted, 
-                    "skipped": len(links) - inserted,
-                    "total_records": len(links),
+                    "skipped": len(uids) - inserted,
+                    "total_records": len(uids),
                     "processing_time": f"{total_time:.2f}s",
                     "data_build_time": f"{data_time:.2f}s",
                     "check_existing_time": f"{check_time:.2f}s",
@@ -546,8 +546,8 @@ async def uplink_update(request: UplinkUpdateRequest):
             processing_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] 无新记录需要插入")
             return {
                 "inserted": 0, 
-                "skipped": len(links),
-                "total_records": len(links),
+                "skipped": len(uids),
+                "total_records": len(uids),
                 "processing_time": f"{total_time:.2f}s",
                 "data_build_time": f"{data_time:.2f}s",
                 "processing_log": processing_log
@@ -578,23 +578,23 @@ async def uplink_update(request: UplinkUpdateRequest):
                     "processing_log": processing_log
                 }
 
-            # Check which selected links already exist in MongoDB
+            # Check which selected uids already exist in MongoDB
             check_start = datetime.now()
-            existing_links: set[str] = set()
-            cursor = col.find({"link": {"$in": request.selected_ids}}, {"link": 1, "_id": 0})
+            existing_uids: set[str] = set()
+            cursor = col.find({"uid": {"$in": request.selected_ids}}, {"uid": 1, "_id": 0})
             async for doc in cursor:
-                if "link" in doc and doc["link"]:
-                    existing_links.add(doc["link"])
+                if "uid" in doc and doc["uid"]:
+                    existing_uids.add(doc["uid"])
             check_time = (datetime.now() - check_start).total_seconds()
-            logger.info(f"检查选定链接完成，找到 {len(existing_links)} 个已存在，耗时: {check_time:.2f}秒")
-            processing_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] 检查选定链接完成，找到 {len(existing_links)} 个已存在，耗时: {check_time:.2f}秒")
+            logger.info(f"检查选定uid完成，找到 {len(existing_uids)} 个已存在，耗时: {check_time:.2f}秒")
+            processing_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] 检查选定uid完成，找到 {len(existing_uids)} 个已存在，耗时: {check_time:.2f}秒")
 
             # build docs to insert (only those not already in MongoDB)
             build_start = datetime.now()
             to_insert: List[Dict[str, Any]] = []
             for _, row in selected_df.iterrows():
-                link = row.get("link")
-                if not link or link in existing_links:
+                uid = row.get("uid")
+                if not uid or uid in existing_uids:
                     continue
                 doc = {k: (None if (pd.isna(v)) else v) for k, v in row.to_dict().items()}
                 to_insert.append(doc)
@@ -654,18 +654,18 @@ async def uplink_pending():
         # 获取本地CSV数据
         dtllink = _build_dtllink_df()
         
-        if dtllink.empty or "link" not in dtllink.columns:
+        if dtllink.empty or "uid" not in dtllink.columns:
             return {"records": [], "count": 0}
         
-        # 获取MongoDB中已存在的link列表
-        existing_links = []
-        async for doc in col.find({"link": {"$exists": True, "$ne": None}}, {"link": 1}):
-            if doc.get("link"):
-                existing_links.append(doc["link"])
+        # 获取MongoDB中已存在的uid列表
+        existing_uids = []
+        async for doc in col.find({"uid": {"$exists": True, "$ne": None}}, {"uid": 1}):
+            if doc.get("uid"):
+                existing_uids.append(doc["uid"])
         
         # 筛选出本地CSV中存在但MongoDB中不存在的记录
-        # 使用与frontend相同的逻辑: dtllink[~dtllink["link"].isin(olddf["link"])]
-        pending_mask = ~dtllink["link"].isin(existing_links)
+        # 使用与frontend相同的逻辑: dtllink[~dtllink["uid"].isin(olddf["uid"])]
+        pending_mask = ~dtllink["uid"].isin(existing_uids)
         pending_df = dtllink[pending_mask]
         
         # 转换为字典列表，处理NaN值
@@ -693,17 +693,17 @@ async def uplink_export_pending():
         # 获取本地CSV数据
         dtllink = _build_dtllink_df()
         
-        if dtllink.empty or "link" not in dtllink.columns:
+        if dtllink.empty or "uid" not in dtllink.columns:
             raise HTTPException(status_code=404, detail="No pending data available")
         
-        # 获取MongoDB中已存在的link列表
-        existing_links = []
-        async for doc in col.find({"link": {"$exists": True, "$ne": None}}, {"link": 1}):
-            if doc.get("link"):
-                existing_links.append(doc["link"])
+        # 获取MongoDB中已存在的uid列表
+        existing_uids = []
+        async for doc in col.find({"uid": {"$exists": True, "$ne": None}}, {"uid": 1}):
+            if doc.get("uid"):
+                existing_uids.append(doc["uid"])
         
         # 筛选出本地CSV中存在但MongoDB中不存在的记录
-        pending_mask = ~dtllink["link"].isin(existing_links)
+        pending_mask = ~dtllink["uid"].isin(existing_uids)
         pending_df = dtllink[pending_mask]
         
         if pending_df.empty:
@@ -738,7 +738,7 @@ async def uplink_export_selected(request: ExportSelectedRequest):
         # 获取本地CSV数据
         dtllink = _build_dtllink_df()
         
-        if dtllink.empty or "link" not in dtllink.columns:
+        if dtllink.empty or "uid" not in dtllink.columns:
             raise HTTPException(status_code=404, detail="No pending data available")
         
         # 筛选出选中的记录 - 支持uid、id或索引
