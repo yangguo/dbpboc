@@ -200,6 +200,13 @@ export default function UplinkPage() {
     setSelectedRecords(newSelected);
   };
 
+  const [updateProgress, setUpdateProgress] = useState<{
+    isRunning: boolean;
+    logs: string[];
+    result?: any;
+    error?: string;
+  }>({ isRunning: false, logs: [] });
+
   const doUpdate = async () => {
     const selectedIds = Array.from(selectedRecords);
     if (selectedIds.length === 0) {
@@ -207,14 +214,9 @@ export default function UplinkPage() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `确定要上线选中的 ${selectedIds.length} 条数据吗？\n\n` +
-      `此操作将把选中的数据插入到 MongoDB 中，请确认。`
-    );
-
-    if (!confirmed) return;
-
     setBusy(true);
+    setUpdateProgress({ isRunning: true, logs: ['开始执行上线操作...'] });
+    
     try {
       const resp = await fetch(`${config.backendUrl}/api/v1/uplink/update`, {
         method: 'POST',
@@ -232,12 +234,14 @@ export default function UplinkPage() {
       }
 
       const result = await resp.json();
-      alert(
-        `✅ 数据上线成功！\n\n` +
-        `📊 插入记录: ${result.inserted || 0} 条\n` +
-        `⏱️ 处理时间: ${result.processing_time || 'N/A'}\n` +
-        `📅 更新时间: ${new Date().toLocaleString()}`
-      );
+      
+      // 显示详细的处理结果和日志
+      setUpdateProgress({
+        isRunning: false,
+        logs: result.processing_log || ['处理完成'],
+        result: result,
+        error: result.error
+      });
 
       // 重新加载数据
       await loadUplinkInfo();
@@ -246,11 +250,11 @@ export default function UplinkPage() {
     } catch (e) {
         console.error('更新失败:', e);
         const errorMessage = e instanceof Error ? e.message : '未知错误';
-        alert(
-          `❌ 数据上线失败\n\n` +
-          `错误信息: ${errorMessage}\n` +
-          `请检查网络连接和后端服务状态，然后重试。`
-        );
+        setUpdateProgress({
+          isRunning: false,
+          logs: ['操作失败'],
+          error: errorMessage
+        });
       } finally {
         setBusy(false);
       }
@@ -596,6 +600,110 @@ export default function UplinkPage() {
             </p>
           </CardContent>
         </Card>
+
+        {/* 进度显示组件 */}
+        {(updateProgress.isRunning || updateProgress.logs.length > 0) && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                {updateProgress.isRunning ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    处理中...
+                  </>
+                ) : updateProgress.error ? (
+                  <>
+                    <span className="text-red-600">❌</span>
+                    处理失败
+                  </>
+                ) : (
+                  <>
+                    <span className="text-green-600">✅</span>
+                    处理完成
+                  </>
+                )}
+              </CardTitle>
+              <CardDescription>
+                {updateProgress.isRunning ? '正在执行上线操作，请稍候...' : '操作执行结果'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* 处理结果摘要 */}
+              {updateProgress.result && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">{updateProgress.result.inserted || 0}</div>
+                    <div className="text-sm text-muted-foreground">插入记录</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-orange-600">{updateProgress.result.skipped || 0}</div>
+                    <div className="text-sm text-muted-foreground">跳过记录</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">{updateProgress.result.total_records || 0}</div>
+                    <div className="text-sm text-muted-foreground">总记录数</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-purple-600">{updateProgress.result.processing_time || 'N/A'}</div>
+                    <div className="text-sm text-muted-foreground">处理时间</div>
+                  </div>
+                </div>
+              )}
+
+              {/* 错误信息 */}
+              {updateProgress.error && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="text-red-800 font-medium">错误信息：</div>
+                  <div className="text-red-700 mt-1">{updateProgress.error}</div>
+                </div>
+              )}
+
+              {/* 处理日志 */}
+              <div>
+                <Label className="text-sm font-medium">处理日志：</Label>
+                <ScrollArea className="h-48 w-full mt-2 p-3 bg-gray-50 border rounded-md">
+                  <div className="space-y-1">
+                    {updateProgress.logs.map((log, index) => (
+                      <div key={index} className="text-sm font-mono text-gray-700">
+                        <span className="text-gray-500">[{String(index + 1).padStart(2, '0')}]</span> {log}
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+
+              {/* 详细时间统计 */}
+              {updateProgress.result && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {updateProgress.result.data_build_time && (
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="text-blue-800 font-medium">数据构建时间</div>
+                      <div className="text-blue-700">{updateProgress.result.data_build_time}</div>
+                    </div>
+                  )}
+                  {updateProgress.result.db_connection_time && (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="text-green-800 font-medium">数据库连接时间</div>
+                      <div className="text-green-700">{updateProgress.result.db_connection_time}</div>
+                    </div>
+                  )}
+                  {updateProgress.result.filter_time && (
+                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                      <div className="text-purple-800 font-medium">数据过滤时间</div>
+                      <div className="text-purple-700">{updateProgress.result.filter_time}</div>
+                    </div>
+                  )}
+                  {updateProgress.result.insert_time && (
+                    <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                      <div className="text-orange-800 font-medium">数据插入时间</div>
+                      <div className="text-orange-700">{updateProgress.result.insert_time}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </MainLayout>
   );
