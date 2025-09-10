@@ -449,10 +449,9 @@ export default function UplinkPage() {
               {/* 批量操作按钮 */}
               <div className="flex flex-wrap gap-2">
                 <Button
-                  variant="outline"
                   size="sm"
                   onClick={handleSelectAll}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105"
                 >
                   {selectedRecords.size === pendingData.length ? (
                     <Square className="h-4 w-4" />
@@ -462,10 +461,9 @@ export default function UplinkPage() {
                   {selectedRecords.size === pendingData.length ? '全不选' : '全选'}
                 </Button>
                 <Button
-                  variant="outline"
                   size="sm"
                   onClick={handleInvertSelection}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105"
                 >
                   <RotateCcw className="h-4 w-4" />
                   反选
@@ -544,18 +542,18 @@ export default function UplinkPage() {
               {/* 下载按钮 */}
               <div className="flex gap-2">
                 <Button
-                  variant="outline"
                   size="sm"
                   onClick={downloadPendingData}
                   disabled={loadingPending}
+                  className="bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:from-gray-400 disabled:to-gray-500"
                 >
                   下载全部待更新数据
                 </Button>
                 <Button
-                  variant="outline"
                   size="sm"
                   onClick={downloadSelectedData}
                   disabled={selectedRecords.size === 0}
+                  className="bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:from-gray-400 disabled:to-gray-500"
                 >
                   下载选中数据 ({selectedRecords.size})
                 </Button>
@@ -579,12 +577,16 @@ export default function UplinkPage() {
               <Button 
                 onClick={doUpdate} 
                 disabled={busy || selectedRecords.size === 0} 
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:from-gray-400 disabled:to-gray-500"
               >
                 {busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} 
                 上线选中数据 ({selectedRecords.size})
               </Button>
-              <Button onClick={downloadMongo} variant="outline" disabled={loading} className="flex items-center gap-2">
+              <Button 
+                onClick={downloadMongo} 
+                disabled={loading} 
+                className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:from-gray-400 disabled:to-gray-500"
+              >
                 {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />} 导出 MongoDB 数据
               </Button>
             </div>

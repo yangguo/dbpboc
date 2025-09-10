@@ -13,6 +13,10 @@ from app.core.database import db, get_database, connect_to_mongo
 
 router = APIRouter()
 
+# Request models
+class UplinkUpdateRequest(BaseModel):
+    selected_ids: List[str]
+
 # Local PBOC CSV root (relative to backend/)
 PBOC_DATA_PATH = "../pboc"
 
@@ -340,7 +344,7 @@ async def uplink_clear():
 
 
 @router.post("/update")
-async def uplink_update(selected_ids: List[str] = None):
+async def uplink_update(request: UplinkUpdateRequest):
     """Insert selected dtl rows (from CSV) into Mongo pbocdtl by link-dedup."""
     try:
         dtllink = _build_dtllink_df()
@@ -352,7 +356,7 @@ async def uplink_update(selected_ids: List[str] = None):
         col = database["pbocdtl"]
 
         # If no selected_ids provided, use all pending records (backward compatibility)
-        if selected_ids is None or len(selected_ids) == 0:
+        if request.selected_ids is None or len(request.selected_ids) == 0:
             # existing links
             links = dtllink["link"].dropna().unique().tolist() if "link" in dtllink.columns else []
             existing_links: set[str] = set()
@@ -381,13 +385,13 @@ async def uplink_update(selected_ids: List[str] = None):
             return {"inserted": 0, "skipped": len(links)}
         else:
             # Filter for selected records only
-            selected_df = dtllink[dtllink["link"].isin(selected_ids)]
+            selected_df = dtllink[dtllink["link"].isin(request.selected_ids)]
             if selected_df.empty:
                 return {"inserted": 0, "skipped": 0}
 
             # Check which selected links already exist in MongoDB
             existing_links: set[str] = set()
-            cursor = col.find({"link": {"$in": selected_ids}}, {"link": 1, "_id": 0})
+            cursor = col.find({"link": {"$in": request.selected_ids}}, {"link": 1, "_id": 0})
             async for doc in cursor:
                 if "link" in doc and doc["link"]:
                     existing_links.add(doc["link"])
@@ -407,8 +411,8 @@ async def uplink_update(selected_ids: List[str] = None):
                 res = await col.insert_many(to_insert)
                 inserted = len(res.inserted_ids)
                 processing_time = (datetime.now() - start_time).total_seconds()
-                return {"inserted": inserted, "skipped": len(selected_ids) - inserted, "processing_time": f"{processing_time:.2f}s"}
-            return {"inserted": 0, "skipped": len(selected_ids)}
+                return {"inserted": inserted, "skipped": len(request.selected_ids) - inserted, "processing_time": f"{processing_time:.2f}s"}
+            return {"inserted": 0, "skipped": len(request.selected_ids)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
