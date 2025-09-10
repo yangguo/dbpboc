@@ -26,7 +26,7 @@ async def _ensure_db():
 
 
 def _read_csvs(folder: str, prefix: str) -> pd.DataFrame:
-    files = glob.glob(os.path.join(folder, "**", f"{prefix}*.csv"), recursive=True)
+    files = glob.glob(os.path.join(folder, f"{prefix}*.csv"))
     frames: List[pd.DataFrame] = []
     for fp in files:
         try:
