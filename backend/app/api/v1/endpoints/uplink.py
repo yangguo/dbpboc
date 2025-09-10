@@ -30,7 +30,8 @@ def _read_csvs(folder: str, prefix: str) -> pd.DataFrame:
     frames: List[pd.DataFrame] = []
     for fp in files:
         try:
-            df = pd.read_csv(fp, index_col=0, dtype=str, low_memory=False)
+            # 不使用index_col，保持与frontend一致
+            df = pd.read_csv(fp, dtype=str, low_memory=False)
             frames.append(df)
         except Exception:
             continue
