@@ -47,7 +47,13 @@ downloads/
 !web-frontend/src/app/downloads/
 eggs/
 .eggs/
-lib/
+# Python lib directories
+/lib/
+backend/lib/
+frontend/lib/
+
+# Allow TypeScript/JavaScript source lib directories
+!web-frontend/src/lib/
 lib64/
 parts/
 sdist/
@@ -369,6 +375,10 @@ uploads/
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Allow environment example files
+!*.env.example
+!.env.*.example
 *.pem
 *.key
 *.crt

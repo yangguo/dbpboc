@@ -13,7 +13,8 @@ import {
   BarChart3,
   RefreshCw,
   Download,
-  Upload
+  Upload,
+  Database
 } from "lucide-react";
 
 const navigation = [
@@ -26,6 +27,11 @@ const navigation = [
     name: "案例搜索",
     href: "/cases",
     icon: Search,
+  },
+  {
+    name: "MongoDB 搜索",
+    href: "/mongodb-search",
+    icon: Database,
   },
   {
     name: "案例更新",
