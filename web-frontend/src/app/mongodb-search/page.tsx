@@ -223,6 +223,35 @@ export default function MongoDBSearchPage() {
     setAdvancedFilters(prev => ({ ...prev, [key]: value }));
   };
 
+  const getItemTitle = useCallback((it: any): string => {
+    const pick = (v: any) => (typeof v === 'string' ? v.trim() : '');
+    // 1) 首选当事人/企业名称
+    const primary = pick(it?.entity_name);
+    if (primary) return primary;
+    // 2) 常见同义字段
+    const aliases = [
+      'company', 'company_name', 'org_name', 'organization', 'enterprise_name', 'name',
+      '单位名称', '企业名称', '当事人名称'
+    ];
+    for (const k of aliases) {
+      const val = pick(it?.[k]);
+      if (val) return val;
+    }
+    // 3) 退而求其次用标题/文号
+    const fallbackTitle = pick(it?.title);
+    if (fallbackTitle) return fallbackTitle;
+    const doc = pick(it?.doc_no) || pick(it?.document_number);
+    if (doc) return doc;
+    // 4) 再退化：机构 + 日期
+    const agency = pick(it?.agency);
+    const date = pick(it?.decision_date) || pick(it?.publish_date);
+    if (agency && date) return `${agency} · ${date}`;
+    if (agency) return agency;
+    // 5) 最后兜底：类别或短横线
+    const category = pick(it?.category) || pick(it?.case_type);
+    return category || '-';
+  }, []);
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -492,7 +521,7 @@ export default function MongoDBSearchPage() {
                     <div className="flex justify-between items-start gap-4">
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-lg leading-tight">
-                          {item.entity_name || item.title || item.doc_no || '处罚案例'}
+                          {getItemTitle(item)}
                         </h3>
                         <div className="flex flex-wrap gap-2 mb-2">
                           {item.doc_no && (
@@ -566,32 +595,21 @@ export default function MongoDBSearchPage() {
                         </div>
                       )}
                       
-                      {(item.amount || item.amount_num) && (
+                      {/* 若未在右上角展示数值型金额，则在此展示字符串金额，避免重复 */}
+                      {!(typeof item.amount_num === 'number') && item.amount && (
                         <div className="space-y-2">
                           <div className="flex items-center text-xs text-muted-foreground">
                             <DollarSign className="h-4 w-4 mr-1" />
                             罚款金额
                           </div>
                           <p className="text-sm text-red-600 font-bold">
-                            {typeof item.amount_num === 'number'
-                              ? `¥${item.amount_num.toLocaleString()}`
-                              : (item.amount ? `¥${item.amount}` : "未提供")
-                            }
+                            {item.amount ? `¥${item.amount}` : ''}
                           </p>
                         </div>
                       )}
                       
-                      {(item.publish_date || item.decision_date) && (
-                        <div className="space-y-2">
-                          <div className="flex items-center text-xs text-muted-foreground">
-                            <Calendar className="h-4 w-4 mr-1" />
-                            {item.publish_date ? '发布日期' : '决定日期'}
-                          </div>
-                          <p className="text-sm">
-                            {item.publish_date || item.decision_date}
-                          </p>
-                        </div>
-                      )}
+                      {/* 日期已在卡片右上角展示，避免重复显示 */}
+                      {(item.publish_date || item.decision_date) && null}
                       
                       {item.industry && (
                         <div className="space-y-2">
@@ -621,37 +639,6 @@ export default function MongoDBSearchPage() {
 
                     {/* 详细信息网格 */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 pt-4 border-t">
-                      {item.agency && (
-                        <div className="space-y-2 p-3 bg-muted rounded-md">
-                          <div className="flex items-center text-xs text-muted-foreground">
-                            <Building className="h-4 w-4 mr-1" />
-                            处罚机关
-                          </div>
-                          <p className="text-sm">{item.agency}</p>
-                        </div>
-                      )}
-                      
-                      {(item.province || item.region) && (
-                        <div className="space-y-2 p-3 bg-muted rounded-md">
-                          <div className="flex items-center text-xs text-muted-foreground">
-                            <Hash className="h-4 w-4 mr-1" />
-                            地区
-                          </div>
-                          <p className="text-sm">
-                            {[item.province, item.region].filter(Boolean).join(', ')}
-                          </p>
-                        </div>
-                      )}
-                      
-                      {item.industry && (
-                        <div className="space-y-2 p-3 bg-muted rounded-md">
-                          <div className="flex items-center text-xs text-muted-foreground">
-                            <Building className="h-4 w-4 mr-1" />
-                            行业
-                          </div>
-                          <p className="text-sm">{item.industry}</p>
-                        </div>
-                      )}
                       
                       {item.category && (
                         <div className="space-y-2 p-3 bg-muted rounded-md">
@@ -683,7 +670,7 @@ export default function MongoDBSearchPage() {
                         </div>
                       )}
                       
-                      {item.document_number && (
+                      {(!item.doc_no && item.document_number) && (
                         <div className="space-y-2 p-3 bg-muted rounded-md">
                           <div className="flex items-center text-xs text-muted-foreground">
                             <FileText className="h-4 w-4 mr-1" />
@@ -713,6 +700,64 @@ export default function MongoDBSearchPage() {
                         </div>
                       )}
                     </div>
+
+                    {/* 其余字段（采用与上方一致的展示风格，去重且不显示内部字段） */}
+                    {(() => {
+                      const shown = new Set<string>([
+                        'doc_no', 'entity_name', 'case_type', 'decision_date', 'publish_date',
+                        'amount_num', 'amount', 'agency', 'region', 'province', 'industry',
+                        'violation_type', 'penalty_content', 'category', 'penalty_basis',
+                        'penalty_decision', 'case_number', 'decision_number', 'link', 'uid', '_id'
+                      ]);
+                      if (item.doc_no) shown.add('document_number');
+                      if (!item.doc_no && item.document_number) shown.add('document_number');
+
+                      const labelMap: Record<string, string> = {
+                        title: '标题', source: '来源', url: '链接', website: '网站',
+                        category: '违规类别', doc_no: '文号', document_number: '文号',
+                        entity_name: '当事人', case_type: '案件类型', penalty_basis: '处罚依据',
+                        penalty_decision: '处罚决定', publish_date: '发布日期', decision_date: '决定日期',
+                        amount: '罚款金额', amount_num: '罚款金额', agency: '处罚机关', region: '地区',
+                        province: '省份', industry: '行业', case_number: '案件编号', decision_number: '决定书编号',
+                        keywords: '关键词'
+                      };
+
+                      const iconFor = (key: string) => {
+                        if (['entity_name', 'title'].includes(key)) return <User className="h-4 w-4 mr-1" />;
+                        if (['agency', 'industry'].includes(key)) return <Building className="h-4 w-4 mr-1" />;
+                        if (['publish_date', 'decision_date'].includes(key)) return <Calendar className="h-4 w-4 mr-1" />;
+                        if (['amount', 'amount_num'].includes(key)) return <DollarSign className="h-4 w-4 mr-1" />;
+                        if (['case_number', 'decision_number', 'region', 'province'].includes(key)) return <Hash className="h-4 w-4 mr-1" />;
+                        if (['penalty_decision'].includes(key)) return <Gavel className="h-4 w-4 mr-1" />;
+                        return <FileText className="h-4 w-4 mr-1" />;
+                      };
+
+                      const additional = Object.entries(item)
+                        .filter(([key]) => !shown.has(key))
+                        .filter(([key]) => !key.startsWith('_'));
+
+                      if (additional.length === 0) return null;
+
+                      return (
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {additional.map(([key, value]) => (
+                            <div key={key} className="space-y-2 p-3 bg-muted rounded-md">
+                              <div className="flex items-center text-xs text-muted-foreground">
+                                {iconFor(key)}
+                                {labelMap[key] || key}
+                              </div>
+                              <div className="text-sm">
+                                {value === null || value === undefined
+                                  ? ''
+                                  : typeof value === 'object'
+                                  ? <pre className="text-xs whitespace-pre-wrap break-words">{JSON.stringify(value, null, 2)}</pre>
+                                  : String(value)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
 
                     {/* 底部操作区 */}
                     <div className="flex justify-between items-center mt-6 pt-4 border-t">

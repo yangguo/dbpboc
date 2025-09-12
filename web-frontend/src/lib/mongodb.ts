@@ -219,6 +219,7 @@ export async function searchCases(query: SearchQuery): Promise<SearchResult> {
   // Get paginated results
   const items = await collection
     .find(mongoQuery)
+    .project({ _id: 0 })
     .sort({ publish_date: -1 })
     .skip(skip)
     .limit(pageSize)
