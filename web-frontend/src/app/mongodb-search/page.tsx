@@ -3,14 +3,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Search, Database, FileText, Calendar, DollarSign, User, Building, Hash, Filter, X, RotateCcw, Gavel, ExternalLink, AlertTriangle } from 'lucide-react';
+import { Loader2, Search, FileText, Calendar, DollarSign, User, Building, Hash, Filter, RotateCcw, Gavel } from 'lucide-react';
 import { MainLayout } from '@/components/layout/main-layout';
-import { DateRange } from '@/components/ui/date-range';
 import { Label } from '@/components/ui/label';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Separator } from '@/components/ui/separator';
 
 interface SearchResult {
   items: any[];
@@ -227,18 +225,19 @@ export default function MongoDBSearchPage() {
 
   return (
     <MainLayout>
-      <div className="container mx-auto py-8 px-4">
-        <div className="max-w-6xl mx-auto bg-white rounded-lg shadow-lg p-6">
-          <h1 className="text-3xl font-bold mb-8 flex items-center gap-2 text-gray-900">
-            <Database className="h-8 w-8 text-blue-600" />
-            MongoDB Search
-          </h1>
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">MongoDB 搜索</h1>
+            <p className="text-muted-foreground">搜索和管理所有案例记录</p>
+          </div>
+        </div>
         
           {/* 关键词搜索区 */}
-          <Card className="mb-6 bg-white border-2 border-gray-200 shadow-md">
-            <CardHeader className="bg-gray-50">
-              <CardTitle className="flex items-center gap-2 text-gray-900">
-                <Search className="h-5 w-5 text-blue-600" />
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Search className="h-5 w-5" />
                 关键词搜索
               </CardTitle>
             </CardHeader>
@@ -251,7 +250,15 @@ export default function MongoDBSearchPage() {
                   onChange={(e) => setQuery(e.target.value)}
                   className="flex-1"
                 />
-                <Button type="submit" disabled={loading || !query.trim()}>
+                <Button
+                  type="submit"
+                  disabled={loading || !query.trim()}
+                  className={`${
+                    query.trim()
+                      ? "bg-blue-600 hover:bg-blue-700 text-white"
+                      : "bg-gray-300 hover:bg-gray-400 text-gray-500 cursor-not-allowed"
+                  }`}
+                >
                   {loading ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   ) : (
@@ -262,7 +269,7 @@ export default function MongoDBSearchPage() {
               </form>
               
               {error && (
-                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md text-red-700">
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
                   {error}
                 </div>
               )}
@@ -270,16 +277,16 @@ export default function MongoDBSearchPage() {
           </Card>
           
           {/* 高级筛选区 */}
-          <Card className="mb-6 bg-white border-2 border-gray-200 shadow-md">
+          <Card>
             <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
               <CollapsibleTrigger asChild>
-                <CardHeader className="cursor-pointer hover:bg-gray-50 transition-colors bg-gray-50">
-                  <CardTitle className="flex items-center justify-between text-gray-900">
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <CardTitle className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Filter className="h-5 w-5 text-blue-600" />
+                      <Filter className="h-5 w-5" />
                       高级筛选
                     </div>
-                    <div className="text-sm font-normal text-gray-600">
+                    <div className="text-sm font-normal text-muted-foreground">
                       {showAdvanced ? "收起" : "展开"}
                     </div>
                   </CardTitle>
@@ -289,7 +296,7 @@ export default function MongoDBSearchPage() {
                 <CardContent className="pt-0">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                     <div className="space-y-2">
-                      <Label htmlFor="doc_no">文号</Label>
+                      <Label htmlFor="doc_no" className="text-muted-foreground">文号</Label>
                       <Input
                         id="doc_no"
                         placeholder="输入文号"
@@ -299,7 +306,7 @@ export default function MongoDBSearchPage() {
                     </div>
                     
                     <div className="space-y-2">
-                      <Label htmlFor="entity_name">当事人</Label>
+                      <Label htmlFor="entity_name" className="text-muted-foreground">当事人</Label>
                       <Input
                         id="entity_name"
                         placeholder="输入当事人名称"
@@ -309,7 +316,7 @@ export default function MongoDBSearchPage() {
                     </div>
                     
                     <div className="space-y-2">
-                      <Label htmlFor="case_type">案件类型</Label>
+                      <Label htmlFor="case_type" className="text-muted-foreground">案件类型</Label>
                       <Input
                         id="case_type"
                         placeholder="输入案件类型"
@@ -319,7 +326,7 @@ export default function MongoDBSearchPage() {
                     </div>
                     
                     <div className="space-y-2">
-                      <Label htmlFor="penalty_basis">处罚依据</Label>
+                      <Label htmlFor="penalty_basis" className="text-muted-foreground">处罚依据</Label>
                       <Input
                         id="penalty_basis"
                         placeholder="输入处罚依据"
@@ -329,7 +336,7 @@ export default function MongoDBSearchPage() {
                     </div>
                     
                     <div className="space-y-2">
-                      <Label htmlFor="penalty_decision">处罚决定</Label>
+                      <Label htmlFor="penalty_decision" className="text-muted-foreground">处罚决定</Label>
                       <Input
                         id="penalty_decision"
                         placeholder="输入处罚决定"
@@ -339,7 +346,7 @@ export default function MongoDBSearchPage() {
                     </div>
                     
                     <div className="space-y-2">
-                      <Label htmlFor="department">处罚机关</Label>
+                      <Label htmlFor="department" className="text-muted-foreground">处罚机关</Label>
                       <Input
                         id="department"
                         placeholder="输入处罚机关"
@@ -349,7 +356,7 @@ export default function MongoDBSearchPage() {
                     </div>
                     
                     <div className="space-y-2">
-                      <Label htmlFor="region">地区</Label>
+                      <Label htmlFor="region" className="text-muted-foreground">地区</Label>
                       <Input
                         id="region"
                         placeholder="输入地区"
@@ -359,7 +366,7 @@ export default function MongoDBSearchPage() {
                     </div>
                     
                     <div className="space-y-2">
-                      <Label htmlFor="keywords">关键词</Label>
+                      <Label htmlFor="keywords" className="text-muted-foreground">关键词</Label>
                       <Input
                         id="keywords"
                         placeholder="输入关键词"
@@ -371,7 +378,7 @@ export default function MongoDBSearchPage() {
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                     <div className="space-y-2">
-                      <Label>发布日期范围</Label>
+                      <Label className="text-muted-foreground">发布日期范围</Label>
                       <div className="flex gap-2">
                         <Input
                           type="date"
@@ -388,7 +395,7 @@ export default function MongoDBSearchPage() {
                     </div>
                     
                     <div className="space-y-2">
-                      <Label>金额范围</Label>
+                      <Label className="text-muted-foreground">金额范围</Label>
                       <div className="flex gap-2">
                         <Input
                           placeholder="最小金额"
@@ -412,7 +419,7 @@ export default function MongoDBSearchPage() {
                       type="button" 
                       onClick={handleAdvancedSearch}
                       disabled={loading}
-                      variant="default"
+                      className="bg-green-600 hover:bg-green-700 text-white"
                     >
                       {loading ? (
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -426,7 +433,7 @@ export default function MongoDBSearchPage() {
                       type="button" 
                       onClick={handleCombinedSearch}
                       disabled={loading}
-                      variant="secondary"
+                      className="bg-purple-600 hover:bg-purple-700 text-white"
                     >
                       {loading ? (
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -439,7 +446,7 @@ export default function MongoDBSearchPage() {
                     <Button 
                       type="button" 
                       onClick={clearAllFilters}
-                      variant="outline"
+                      className="border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
                     >
                       <RotateCcw className="h-4 w-4 mr-2" />
                       清除全部
@@ -452,17 +459,17 @@ export default function MongoDBSearchPage() {
           
           {/* 搜索日志区 */}
           {searchLogs.length > 0 && (
-            <Card className="mb-6 bg-white border-2 border-gray-200 shadow-md">
-              <CardHeader className="bg-gray-50">
-                <CardTitle className="flex items-center gap-2 text-gray-900">
-                  <FileText className="h-5 w-5 text-blue-600" />
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
                   搜索历史
                 </CardTitle>
               </CardHeader>
-              <CardContent className="bg-white">
+              <CardContent>
                 <div className="space-y-2">
                   {searchLogs.map((log, index) => (
-                    <div key={index} className="text-sm text-gray-700 p-3 bg-gray-100 rounded-lg border border-gray-200">
+                    <div key={index} className="text-sm text-muted-foreground p-3 bg-muted/30 rounded-md">
                       {log}
                     </div>
                   ))}
@@ -472,35 +479,19 @@ export default function MongoDBSearchPage() {
           )}
 
         {results && (
-          <Card className="bg-white border-2 border-gray-200 shadow-md">
-            <CardHeader className="bg-gray-50">
-              <CardTitle className="flex items-center justify-between text-gray-900">
-                <div className="flex items-center gap-2">
-                  <Database className="h-5 w-5 text-blue-600" />
-                  搜索结果
-                </div>
-                <Badge variant="secondary" className="bg-blue-100 text-blue-800 border-blue-200">
-                  共 {results.total} 条结果
-                </Badge>
-              </CardTitle>
+          <Card>
+            <CardHeader>
+              <CardTitle>搜索结果</CardTitle>
+              <CardDescription>共 {results.total} 条记录</CardDescription>
             </CardHeader>
-            <CardContent className="bg-white">
-              <div className="mb-4 flex justify-between items-center">
-                <p className="text-gray-600">
-                  Found {results.total} results{query && ` for "${query}"`}
-                </p>
-                <Badge variant="secondary">
-                  Page {results.page} of {results.totalPages}
-                </Badge>
-              </div>
-
+            <CardContent>
               <div className="grid gap-6">
                 {results.items.map((item, index) => (
-                  <Card key={index} className="hover:shadow-xl transition-all duration-200 border-2 border-gray-200 hover:border-blue-300 bg-white">
+                  <Card key={index} className="hover:shadow-sm transition-all duration-200">
                   <CardHeader className="pb-4">
                     <div className="flex justify-between items-start gap-4">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-xl mb-3 text-white leading-tight">
+                        <h3 className="font-semibold text-lg leading-tight">
                           {item.entity_name || item.title || item.doc_no || '处罚案例'}
                         </h3>
                         <div className="flex flex-wrap gap-2 mb-2">
@@ -511,13 +502,13 @@ export default function MongoDBSearchPage() {
                             </Badge>
                           )}
                           {item.case_type && (
-                            <Badge variant="outline" className="text-xs bg-blue-100 text-blue-800 border-blue-300">
+                            <Badge variant="outline" className="text-xs text-muted-foreground">
                               <FileText className="h-3 w-3 mr-1" />
                               {item.case_type}
                             </Badge>
                           )}
                           {item.decision_date && (
-                            <Badge variant="outline" className="text-xs bg-green-100 text-green-800 border-green-300">
+                            <Badge variant="outline" className="text-xs text-muted-foreground">
                               <Calendar className="h-3 w-3 mr-1" />
                               决定日期: {item.decision_date}
                             </Badge>
@@ -526,15 +517,13 @@ export default function MongoDBSearchPage() {
                       </div>
                       <div className="text-right flex-shrink-0">
                         {item.amount_num && (
-                          <div className="mb-2">
-                            <Badge variant="destructive" className="text-sm font-semibold">
-                              <DollarSign className="h-3 w-3 mr-1" />
-                              ¥{item.amount_num.toLocaleString()}
-                            </Badge>
+                          <div className="mb-2 text-sm font-bold text-red-600">
+                            <DollarSign className="inline h-3 w-3 mr-1" />
+                            ¥{item.amount_num.toLocaleString()}
                           </div>
                         )}
                         {(item.publish_date || item.decision_date) && (
-                          <div className="flex items-center text-sm text-gray-300">
+                          <div className="flex items-center text-xs text-muted-foreground">
                             <Calendar className="h-3 w-3 mr-1" />
                             {item.publish_date || item.decision_date}
                           </div>
@@ -547,31 +536,31 @@ export default function MongoDBSearchPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                       {item.entity_name && (
                         <div className="space-y-2">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <User className="h-4 w-4 mr-1 text-blue-400" />
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <User className="h-4 w-4 mr-1" />
                             当事人
                           </div>
-                          <p className="text-sm text-white font-semibold">{item.entity_name}</p>
+                          <p className="text-sm">{item.entity_name}</p>
                         </div>
                       )}
                       
                       {item.agency && (
                         <div className="space-y-2">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <Building className="h-4 w-4 mr-1 text-blue-400" />
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <Building className="h-4 w-4 mr-1" />
                             处罚机关
                           </div>
-                          <p className="text-sm text-white font-semibold">{item.agency}</p>
+                          <p className="text-sm">{item.agency}</p>
                         </div>
                       )}
                       
                       {(item.province || item.region) && (
                         <div className="space-y-2">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <Hash className="h-4 w-4 mr-1 text-blue-400" />
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <Hash className="h-4 w-4 mr-1" />
                             地区
                           </div>
-                          <p className="text-sm text-white font-semibold">
+                          <p className="text-sm">
                             {[item.province, item.region].filter(Boolean).join(' - ')}
                           </p>
                         </div>
@@ -579,11 +568,11 @@ export default function MongoDBSearchPage() {
                       
                       {(item.amount || item.amount_num) && (
                         <div className="space-y-2">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <DollarSign className="h-4 w-4 mr-1 text-blue-400" />
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <DollarSign className="h-4 w-4 mr-1" />
                             罚款金额
                           </div>
-                          <p className="text-sm text-red-400 font-bold">
+                          <p className="text-sm text-red-600 font-bold">
                             {typeof item.amount_num === 'number'
                               ? `¥${item.amount_num.toLocaleString()}`
                               : (item.amount ? `¥${item.amount}` : "未提供")
@@ -594,11 +583,11 @@ export default function MongoDBSearchPage() {
                       
                       {(item.publish_date || item.decision_date) && (
                         <div className="space-y-2">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <Calendar className="h-4 w-4 mr-1 text-blue-400" />
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <Calendar className="h-4 w-4 mr-1" />
                             {item.publish_date ? '发布日期' : '决定日期'}
                           </div>
-                          <p className="text-sm text-white font-semibold">
+                          <p className="text-sm">
                             {item.publish_date || item.decision_date}
                           </p>
                         </div>
@@ -606,11 +595,11 @@ export default function MongoDBSearchPage() {
                       
                       {item.industry && (
                         <div className="space-y-2">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <Building className="h-4 w-4 mr-1 text-blue-400" />
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <Building className="h-4 w-4 mr-1" />
                             行业
                           </div>
-                          <p className="text-sm text-white font-semibold">{item.industry}</p>
+                          <p className="text-sm">{item.industry}</p>
                         </div>
                       )}
                     </div>
@@ -618,136 +607,128 @@ export default function MongoDBSearchPage() {
                     {/* 详细信息网格 */}
                     <div className="space-y-4">
                       {item.violation_type && (
-                        <div className="bg-red-900/20 p-4 rounded-lg border-2 border-red-500/30 shadow-sm">
-                          <span className="font-bold text-red-300 text-sm block mb-2">违法行为类型</span>
-                          <p className="text-red-200 text-sm leading-relaxed font-medium">{item.violation_type}</p>
+                        <div className="p-4 bg-muted rounded-md text-sm leading-relaxed border-l-4 border-orange-500">
+                          {item.violation_type}
                         </div>
                       )}
                       
                       {item.penalty_content && (
-                        <div className="bg-orange-900/20 p-4 rounded-lg border-2 border-orange-500/30 shadow-sm">
-                          <span className="font-bold text-orange-300 text-sm block mb-2">行政处罚内容</span>
-                          <p className="text-orange-200 text-sm leading-relaxed font-medium">{item.penalty_content}</p>
+                        <div className="p-4 bg-muted rounded-md text-sm leading-relaxed border-l-4 border-red-500">
+                          {item.penalty_content}
                         </div>
                       )}
                     </div>
 
                     {/* 详细信息网格 */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 pt-4 border-t-2 border-gray-600">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 pt-4 border-t">
                       {item.agency && (
-                        <div className="space-y-2 p-3 bg-gray-800/50 rounded-lg border border-gray-600">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <Building className="h-4 w-4 mr-1 text-blue-400" />
+                        <div className="space-y-2 p-3 bg-muted rounded-md">
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <Building className="h-4 w-4 mr-1" />
                             处罚机关
                           </div>
-                          <p className="text-sm text-white font-semibold">{item.agency}</p>
+                          <p className="text-sm">{item.agency}</p>
                         </div>
                       )}
                       
                       {(item.province || item.region) && (
-                        <div className="space-y-2 p-3 bg-gray-800/50 rounded-lg border border-gray-600">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <Hash className="h-4 w-4 mr-1 text-blue-400" />
+                        <div className="space-y-2 p-3 bg-muted rounded-md">
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <Hash className="h-4 w-4 mr-1" />
                             地区
                           </div>
-                          <p className="text-sm text-white font-semibold">
+                          <p className="text-sm">
                             {[item.province, item.region].filter(Boolean).join(', ')}
                           </p>
                         </div>
                       )}
                       
                       {item.industry && (
-                        <div className="space-y-2 p-3 bg-gray-800/50 rounded-lg border border-gray-600">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <Building className="h-4 w-4 mr-1 text-blue-400" />
+                        <div className="space-y-2 p-3 bg-muted rounded-md">
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <Building className="h-4 w-4 mr-1" />
                             行业
                           </div>
-                          <p className="text-sm text-white font-semibold">{item.industry}</p>
+                          <p className="text-sm">{item.industry}</p>
                         </div>
                       )}
                       
                       {item.category && (
-                        <div className="space-y-2 p-3 bg-gray-800/50 rounded-lg border border-gray-600">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <FileText className="h-4 w-4 mr-1 text-blue-400" />
+                        <div className="space-y-2 p-3 bg-muted rounded-md">
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <FileText className="h-4 w-4 mr-1" />
                             违规类别
                           </div>
-                          <p className="text-sm text-white font-semibold">{item.category}</p>
+                          <p className="text-sm">{item.category}</p>
                         </div>
                       )}
                       
                       {item.penalty_basis && (
-                        <div className="space-y-2 p-3 bg-gray-800/50 rounded-lg border border-gray-600">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <FileText className="h-4 w-4 mr-1 text-blue-400" />
+                        <div className="space-y-2 p-3 bg-muted rounded-md">
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <FileText className="h-4 w-4 mr-1" />
                             处罚依据
                           </div>
-                          <p className="text-sm text-white font-semibold">{item.penalty_basis}</p>
+                          <p className="text-sm">{item.penalty_basis}</p>
                         </div>
                       )}
                       
                       {item.penalty_decision && (
-                        <div className="space-y-2 p-3 bg-gray-800/50 rounded-lg border border-gray-600">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <Gavel className="h-4 w-4 mr-1 text-blue-400" />
+                        <div className="space-y-2 p-3 bg-muted rounded-md">
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <Gavel className="h-4 w-4 mr-1" />
                             处罚决定
                           </div>
-                          <p className="text-sm text-white font-semibold">{item.penalty_decision}</p>
+                          <p className="text-sm">{item.penalty_decision}</p>
                         </div>
                       )}
                       
                       {item.document_number && (
-                        <div className="space-y-2 p-3 bg-gray-800/50 rounded-lg border border-gray-600">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <FileText className="h-4 w-4 mr-1 text-blue-400" />
+                        <div className="space-y-2 p-3 bg-muted rounded-md">
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <FileText className="h-4 w-4 mr-1" />
                             文号
                           </div>
-                          <p className="text-sm text-white font-semibold">{item.document_number}</p>
+                          <p className="text-sm">{item.document_number}</p>
                         </div>
                       )}
                       
                       {item.case_number && (
-                        <div className="space-y-2 p-3 bg-gray-800/50 rounded-lg border border-gray-600">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <Hash className="h-4 w-4 mr-1 text-blue-400" />
+                        <div className="space-y-2 p-3 bg-muted rounded-md">
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <Hash className="h-4 w-4 mr-1" />
                             案件编号
                           </div>
-                          <p className="text-sm text-white font-semibold">{item.case_number}</p>
+                          <p className="text-sm">{item.case_number}</p>
                         </div>
                       )}
                       
                       {item.decision_number && (
-                        <div className="space-y-2 p-3 bg-gray-800/50 rounded-lg border border-gray-600">
-                          <div className="flex items-center text-xs font-bold text-gray-300 uppercase tracking-wide">
-                            <FileText className="h-4 w-4 mr-1 text-blue-400" />
+                        <div className="space-y-2 p-3 bg-muted rounded-md">
+                          <div className="flex items-center text-xs text-muted-foreground">
+                            <FileText className="h-4 w-4 mr-1" />
                             决定书编号
                           </div>
-                          <p className="text-sm text-white font-semibold">{item.decision_number}</p>
+                          <p className="text-sm">{item.decision_number}</p>
                         </div>
                       )}
                     </div>
 
                     {/* 底部操作区 */}
-                    <div className="flex justify-between items-center mt-6 pt-4 border-t-2 border-gray-600">
+                    <div className="flex justify-between items-center mt-6 pt-4 border-t">
                       <div className="flex items-center space-x-2">
                         {item.uid && (
-                          <Badge variant="outline" className="text-xs bg-gray-800/50 text-gray-300 border-2 border-gray-600 font-semibold">
+                          <div className="text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full">
                             ID: {item.uid.slice(-8)}
-                          </Badge>
+                          </div>
                         )}
                       </div>
                       {item.link && (
-                        <a 
-                          href={item.link} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 border-2 border-blue-600 hover:border-blue-500 rounded-md transition-all duration-200 shadow-md"
-                        >
-                          查看原文
-                          <svg className="ml-1 h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                        </a>
+                        <Button asChild variant="outline" size="sm">
+                          <a href={item.link} target="_blank" rel="noopener noreferrer">
+                            查看原文
+                          </a>
+                        </Button>
                       )}
                     </div>
                   </CardContent>
@@ -756,10 +737,10 @@ export default function MongoDBSearchPage() {
             </div>
 
             {results.total === 0 && (
-              <Card className="bg-gray-800/50 border-gray-600">
-                <CardContent className="text-center py-12 bg-gray-800/50">
-                  <p className="text-gray-300 text-lg font-medium">未找到相关结果{query && ` "${query}"`}</p>
-                  <p className="text-gray-400 text-sm mt-2">请尝试调整搜索条件或使用不同的关键词</p>
+              <Card>
+                <CardContent className="text-center py-12">
+                  <p className="text-lg font-medium text-muted-foreground">未找到相关结果{query && ` "${query}"`}</p>
+                  <p className="text-sm mt-2 text-muted-foreground">请尝试调整搜索条件或使用不同的关键词</p>
                 </CardContent>
               </Card>
             )}
@@ -767,7 +748,6 @@ export default function MongoDBSearchPage() {
         </Card>
       )}
         </div>
-      </div>
     </MainLayout>
   );
 }
