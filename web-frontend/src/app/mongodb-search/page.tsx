@@ -40,6 +40,7 @@ export default function MongoDBSearchPage() {
   const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [searchLogs, setSearchLogs] = useState<string[]>([]);
+  const [lastParams, setLastParams] = useState<URLSearchParams | null>(null);
   
   const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>({
     doc_no: "",
@@ -76,6 +77,7 @@ export default function MongoDBSearchPage() {
       
       if (data.success) {
         setResults(data.data);
+        setLastParams(params);
       } else {
         setError(data.error || 'Search failed');
       }
@@ -137,6 +139,7 @@ export default function MongoDBSearchPage() {
       
       if (data.success) {
         setResults(data.data);
+        setLastParams(params);
         // 添加高级搜索日志
         const activeFilters = Object.entries(advancedFilters)
           .filter(([_, value]) => value.trim() !== "")
@@ -180,6 +183,7 @@ export default function MongoDBSearchPage() {
       
       if (data.success) {
         setResults(data.data);
+        setLastParams(params);
         // 添加组合搜索日志
         const activeFilters = Object.entries(advancedFilters)
           .filter(([_, value]) => value.trim() !== "")
@@ -214,6 +218,7 @@ export default function MongoDBSearchPage() {
     });
     setResults(null);
     setError(null);
+    setLastParams(null);
   };
   
   const updateFilter = (key: keyof AdvancedFilters, value: string) => {
@@ -499,8 +504,22 @@ export default function MongoDBSearchPage() {
         {results && (
           <Card>
             <CardHeader>
-              <CardTitle>搜索结果</CardTitle>
-              <CardDescription>共 {results.total} 条记录</CardDescription>
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <CardTitle>搜索结果</CardTitle>
+                  <CardDescription>共 {results.total} 条记录</CardDescription>
+                </div>
+                {lastParams && results.total > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Button asChild variant="outline" size="sm">
+                      <a href={`/api/mongodb-export?${lastParams.toString()}&format=csv&limit=${Math.min(10000, results.total)}`} target="_blank" rel="noopener noreferrer">导出 CSV</a>
+                    </Button>
+                    <Button asChild variant="outline" size="sm">
+                      <a href={`/api/mongodb-export?${lastParams.toString()}&format=json&limit=${Math.min(10000, results.total)}`} target="_blank" rel="noopener noreferrer">导出 JSON</a>
+                    </Button>
+                  </div>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               <div className="grid gap-6">

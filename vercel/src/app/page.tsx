@@ -22,7 +22,6 @@ type Filters = {
   amount_max: string
   department: string
   region: string
-  keywords: string
 }
 
 export default function Home() {
@@ -38,8 +37,7 @@ export default function Home() {
     amount_min: '',
     amount_max: '',
     department: '',
-    region: '',
-    keywords: ''
+    region: ''
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -69,6 +67,22 @@ export default function Home() {
       setError(e?.message || '搜索失败')
     } finally { setLoading(false) }
   }, [q, filters, buildParams])
+
+  const download = useCallback((format: 'csv' | 'json') => {
+    const params = buildParams()
+    params.set('format', format)
+    if (res?.total) {
+      const cap = Math.min(10000, res.total)
+      params.set('limit', String(cap))
+    }
+    const url = `/api/mongodb-export?${params.toString()}`
+    const a = document.createElement('a')
+    a.href = url
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }, [buildParams, res?.total])
 
   // 仅对关键词做轻微防抖；筛选项通过按钮触发
   useEffect(() => {
@@ -114,7 +128,6 @@ export default function Home() {
             <Input label="处罚决定" value={filters.penalty_decision} onChange={v => setFilters(s => ({ ...s, penalty_decision: v }))} />
             <Input label="处罚机关" value={filters.department} onChange={v => setFilters(s => ({ ...s, department: v }))} />
             <Input label="地区" value={filters.region} onChange={v => setFilters(s => ({ ...s, region: v }))} />
-            <Input label="关键词（AND）" value={filters.keywords} onChange={v => setFilters(s => ({ ...s, keywords: v }))} />
 
             <div className="card" style={{ padding: 12 }}>
               <div className="muted">发布日期（起止）</div>
@@ -135,7 +148,10 @@ export default function Home() {
 
           <div className="row" style={{ marginTop: 12 }}>
             <button className="btn" onClick={search} disabled={loading}>{loading ? '应用中…' : '应用筛选'}</button>
-            <button className="btn btn-outline" onClick={() => { setQ(''); setFilters({ doc_no:'', entity_name:'', case_type:'', penalty_basis:'', penalty_decision:'', publish_date_start:'', publish_date_end:'', amount_min:'', amount_max:'', department:'', region:'', keywords:'' }); setRes(null); setError(null) }}>清除全部</button>
+            <button className="btn btn-outline" onClick={() => { setQ(''); setFilters({ doc_no:'', entity_name:'', case_type:'', penalty_basis:'', penalty_decision:'', publish_date_start:'', publish_date_end:'', amount_min:'', amount_max:'', department:'', region:'' }); setRes(null); setError(null) }}>清除全部</button>
+            <span className="sp-4" />
+            <button className="btn btn-secondary" type="button" onClick={() => download('csv')}>下载 CSV</button>
+            <button className="btn btn-secondary" type="button" onClick={() => download('json')}>下载 JSON</button>
           </div>
         </div>
       </div>
