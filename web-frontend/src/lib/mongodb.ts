@@ -86,6 +86,12 @@ export async function searchCases(query: SearchQuery): Promise<SearchResult> {
 
   // Build MongoDB query
   const mongoQuery: any = {};
+  // Helper to AND an OR-condition block
+  const andOr = (conditions: any[]) => {
+    if (!conditions.length) return;
+    mongoQuery.$and = mongoQuery.$and || [];
+    mongoQuery.$and.push({ $or: conditions });
+  };
 
   // Keyword search across multiple fields
   if (query.keyword) {
@@ -109,22 +115,66 @@ export async function searchCases(query: SearchQuery): Promise<SearchResult> {
 
   // Specific field searches
   if (query.docNo) {
-    mongoQuery.doc_no = new RegExp(query.docNo, 'i');
+    const r = new RegExp(query.docNo, 'i');
+    andOr([
+      { doc_no: r },
+      { document_number: r },
+      { decision_number: r },
+      { case_number: r },
+    ]);
   }
   if (query.entityName) {
-    mongoQuery.entity_name = new RegExp(query.entityName, 'i');
+    const r = new RegExp(query.entityName, 'i');
+    andOr([
+      { entity_name: r },
+      { entity: r },
+      { name: r },
+      { company_name: r },
+      { enterprise_name: r },
+      { org_name: r },
+      { party: r },
+      { '当事人名称': r },
+      { '企业名称': r },
+    ]);
   }
   if (query.violationType) {
-    mongoQuery.violation_type = new RegExp(query.violationType, 'i');
+    const r = new RegExp(query.violationType, 'i');
+    andOr([
+      { violation_type: r },
+      { category: r },
+      { 违规类别: r } as any,
+    ]);
   }
   if (query.penaltyContent) {
-    mongoQuery.penalty_content = new RegExp(query.penaltyContent, 'i');
+    const r = new RegExp(query.penaltyContent, 'i');
+    andOr([
+      { penalty_content: r },
+      { content: r },
+      { 处罚内容: r } as any,
+    ]);
   }
   if (query.agency) {
-    mongoQuery.agency = new RegExp(query.agency, 'i');
+    const r = new RegExp(query.agency, 'i');
+    andOr([
+      { agency: r },
+      { department: r },
+      { authority: r },
+      { organ: r },
+      { 发布机构: r } as any,
+      { 处罚机关: r } as any,
+    ]);
   }
   if (query.region && query.region !== 'all') {
-    mongoQuery.region = query.region;
+    const r = new RegExp(query.region, 'i');
+    andOr([
+      { region: r },
+      { province: r },
+      { city: r },
+      { location: r },
+      { 地区: r } as any,
+      { 省份: r } as any,
+      { 行政区: r } as any,
+    ]);
   }
   if (query.province) {
     mongoQuery.province = new RegExp(query.province, 'i');
@@ -136,16 +186,45 @@ export async function searchCases(query: SearchQuery): Promise<SearchResult> {
     mongoQuery.category = new RegExp(query.category, 'i');
   }
   if (query.caseType) {
-    mongoQuery.case_type = new RegExp(query.caseType, 'i');
+    const r = new RegExp(query.caseType, 'i');
+    andOr([
+      { case_type: r },
+      { category: r },
+      { 案件类型: r } as any,
+      { 案由: r } as any,
+    ]);
   }
   if (query.penaltyBasis) {
-    mongoQuery.penalty_basis = new RegExp(query.penaltyBasis, 'i');
+    const r = new RegExp(query.penaltyBasis, 'i');
+    andOr([
+      { penalty_basis: r },
+      { legal_basis: r },
+      { basis: r },
+      { 处罚依据: r } as any,
+      { 法律依据: r } as any,
+    ]);
   }
   if (query.penaltyDecision) {
-    mongoQuery.penalty_decision = new RegExp(query.penaltyDecision, 'i');
+    const r = new RegExp(query.penaltyDecision, 'i');
+    andOr([
+      { penalty_decision: r },
+      { decision: r },
+      { decision_content: r },
+      { 处罚决定: r } as any,
+      { 行政处罚决定: r } as any,
+      { 决定内容: r } as any,
+    ]);
   }
   if (query.department) {
-    mongoQuery.agency = new RegExp(query.department, 'i');
+    const r = new RegExp(query.department, 'i');
+    andOr([
+      { agency: r },
+      { department: r },
+      { authority: r },
+      { organ: r },
+      { 发布机构: r } as any,
+      { 处罚机关: r } as any,
+    ]);
   }
   if (query.keywords) {
     const keywordsRegex = new RegExp(query.keywords, 'i');
@@ -191,26 +270,48 @@ export async function searchCases(query: SearchQuery): Promise<SearchResult> {
     }
   }
 
-  // Date range filter
+  // Date range filter across multiple possible fields
   if (query.startDate || query.endDate) {
-    mongoQuery.publish_date = {};
-    if (query.startDate) {
-      mongoQuery.publish_date.$gte = query.startDate;
-    }
-    if (query.endDate) {
-      mongoQuery.publish_date.$lte = query.endDate;
-    }
+    const orDates: any[] = [];
+    const addRange = (field: string) => {
+      const c: any = {};
+      c[field] = {};
+      if (query.startDate) c[field].$gte = query.startDate;
+      if (query.endDate) c[field].$lte = query.endDate;
+      orDates.push(c);
+    };
+    addRange('publish_date');
+    addRange('decision_date');
+    andOr(orDates);
   }
 
-  // Amount range filter
+  // Amount range filter on multiple numeric fields, with fallback to string amount via $convert
   if (query.minAmount !== undefined || query.maxAmount !== undefined) {
-    mongoQuery.amount_num = {};
-    if (query.minAmount !== undefined) {
-      mongoQuery.amount_num.$gte = query.minAmount;
+    const orAmount: any[] = [];
+    const numericFields = [
+      'amount_num',
+      'penalty_amount_num',
+      'fine_amount',
+      'fine_num',
+    ];
+    for (const f of numericFields) {
+      const cond: any = {};
+      if (query.minAmount !== undefined || query.maxAmount !== undefined) {
+        cond[f] = {};
+        if (query.minAmount !== undefined) cond[f].$gte = query.minAmount;
+        if (query.maxAmount !== undefined) cond[f].$lte = query.maxAmount;
+        orAmount.push(cond);
+      }
     }
-    if (query.maxAmount !== undefined) {
-      mongoQuery.amount_num.$lte = query.maxAmount;
+    // Fallback: string amount -> double via $convert
+    const amtExprParts: any[] = [];
+    const conv = { $convert: { input: '$amount', to: 'double', onError: null, onNull: null } } as any;
+    if (query.minAmount !== undefined) amtExprParts.push({ $gte: [conv, query.minAmount] });
+    if (query.maxAmount !== undefined) amtExprParts.push({ $lte: [conv, query.maxAmount] });
+    if (amtExprParts.length) {
+      orAmount.push({ $expr: { $and: amtExprParts } });
     }
+    andOr(orAmount);
   }
 
   // Get total count

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { searchCases, SearchQuery } from '@/lib/mongodb';
 
+// 强制使用 Node.js 运行时，确保 MongoDB 驱动可用
+export const runtime = 'nodejs';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

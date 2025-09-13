@@ -30,7 +30,6 @@ interface AdvancedFilters {
   amount_max: string;
   department: string;
   region: string;
-  keywords: string;
 }
 
 export default function MongoDBSearchPage() {
@@ -54,7 +53,6 @@ export default function MongoDBSearchPage() {
     amount_max: "",
     department: "",
     region: "",
-    keywords: ""
   });
 
   const searchCases = async (searchQuery: string) => {
@@ -212,8 +210,7 @@ export default function MongoDBSearchPage() {
       amount_min: "",
       amount_max: "",
       department: "",
-      region: "",
-      keywords: ""
+      region: ""
     });
     setResults(null);
     setError(null);
@@ -394,15 +391,7 @@ export default function MongoDBSearchPage() {
                       />
                     </div>
                     
-                    <div className="space-y-2">
-                      <Label htmlFor="keywords" className="text-muted-foreground">关键词</Label>
-                      <Input
-                        id="keywords"
-                        placeholder="输入关键词"
-                        value={advancedFilters.keywords}
-                        onChange={(e) => updateFilter('keywords', e.target.value)}
-                      />
-                    </div>
+                    
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
