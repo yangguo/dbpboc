@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { searchCases, SearchQuery, getMongoCollection } from '@/lib/mongodb';
+import { searchCases, SearchQuery } from '@/lib/mongodb';
 
 export const runtime = 'nodejs';
 
@@ -49,7 +49,8 @@ export async function GET(request: NextRequest) {
     }
 
     // CSV 导出
-    const keys = Array.from(items.reduce((s: Set<string>, r: any) => {
+    // Ensure keys are explicitly typed as strings for strict TS
+    const keys: string[] = Array.from(items.reduce((s: Set<string>, r: any) => {
       Object.keys(r).forEach(k => s.add(k));
       return s;
     }, new Set<string>()));
@@ -63,7 +64,10 @@ export async function GET(request: NextRequest) {
     };
 
     const header = keys.join(',');
-    const lines = items.map((row: any) => keys.map(k => esc(row[k])).join(','));
+    // Explicitly type key as string to avoid "unknown cannot be used as an index type"
+    const lines = items.map((row: Record<string, unknown>) =>
+      keys.map((k: string) => esc((row as any)[k])).join(',')
+    );
     const csv = [header, ...lines].join('\n');
 
     const ts = new Date();
@@ -79,4 +83,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Export failed' }, { status: 500 });
   }
 }
-

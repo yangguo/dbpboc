@@ -91,7 +91,12 @@ function buildFilter(q: SearchQuery): any {
 function toCSV(rows: any[]): string {
   if (!rows.length) return ''
   // Collect all keys
-  const keys = Array.from(rows.reduce((s, r) => { Object.keys(r).forEach(k => s.add(k)); return s }, new Set<string>()))
+  const keys: string[] = Array.from(
+    rows.reduce((s: Set<string>, r: any) => {
+      Object.keys(r).forEach(k => s.add(k));
+      return s
+    }, new Set<string>())
+  )
   const esc = (v: any) => {
     if (v === null || v === undefined) return ''
     const s = typeof v === 'object' ? JSON.stringify(v) : String(v)
@@ -100,7 +105,9 @@ function toCSV(rows: any[]): string {
     return needs ? `"${t}"` : t
   }
   const header = keys.join(',')
-  const lines = rows.map(r => keys.map(k => esc((r as any)[k])).join(','))
+  const lines = rows.map((r: Record<string, unknown>) =>
+    keys.map((k: string) => esc((r as any)[k])).join(',')
+  )
   return [header, ...lines].join('\n')
 }
 
@@ -131,4 +138,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: e?.message || 'Export failed' }, { status: 500 })
   }
 }
-
