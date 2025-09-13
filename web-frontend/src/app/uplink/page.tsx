@@ -114,12 +114,16 @@ export default function UplinkPage() {
     }
   };
 
-  const loadPendingData = async (page: number = 1, search: string = "") => {
+  const loadPendingData = async (
+    page: number = 1,
+    search: string = "",
+    overridePageSize?: number,
+  ) => {
     setLoadingPending(true);
     try {
       const params = new URLSearchParams({
         page: page.toString(),
-        page_size: pagination.page_size.toString(),
+        page_size: (overridePageSize ?? pagination.page_size).toString(),
         ...(search.trim() && { search: search.trim() }),
       });
 
@@ -132,7 +136,7 @@ export default function UplinkPage() {
         setPagination(
           data.pagination || {
             page: 1,
-            page_size: 50,
+            page_size: overridePageSize ?? pagination.page_size ?? 50,
             total_records: 0,
             total_pages: 0,
             has_next: false,
@@ -140,8 +144,7 @@ export default function UplinkPage() {
           },
         );
 
-        // 清除选择状态（因为数据已更改）
-        setSelectedRecords(new Set());
+        // 不再清除选择状态：支持跨页累计选择
       }
     } catch (error) {
       console.error("加载待更新数据失败:", error);
@@ -217,6 +220,9 @@ export default function UplinkPage() {
       a.click();
       a.remove();
       URL.revokeObjectURL(objectUrl);
+
+      // 导出成功后清空已选择记录
+      setSelectedRecords(new Set());
     } catch (e) {
       console.error(e);
       alert("下载失败");
@@ -294,21 +300,25 @@ export default function UplinkPage() {
   // 页面大小变更处理
   const handlePageSizeChange = (newPageSize: number) => {
     setPagination((prev) => ({ ...prev, page_size: newPageSize }));
-    loadPendingData(1, searchTerm); // 重置到第一页
+    // 重置到第一页，并使用新的页大小加载
+    loadPendingData(1, searchTerm, newPageSize);
   };
 
   const handleSelectAll = () => {
-    if (selectedRecords.size === pendingData.length) {
-      setSelectedRecords(new Set());
+    // 计算当前页的所有记录ID（优先使用uid）
+    const pageIds = pendingData.map(
+      (record, index) => (record.uid || record.id || `index-${index}`) as string,
+    );
+    const allSelectedOnPage = pageIds.every((id) => selectedRecords.has(id));
+    const newSelected = new Set(selectedRecords);
+    if (allSelectedOnPage) {
+      // 仅取消选择当前页
+      pageIds.forEach((id) => newSelected.delete(id));
     } else {
-      setSelectedRecords(
-        new Set(
-          pendingData.map(
-            (record, index) => record.uid || record.id || `index-${index}`,
-          ),
-        ),
-      );
+      // 选择当前页所有记录（在已有选择基础上累加）
+      pageIds.forEach((id) => newSelected.add(id));
     }
+    setSelectedRecords(newSelected);
   };
 
   const handleSelectRecord = (recordId: string) => {
@@ -322,10 +332,13 @@ export default function UplinkPage() {
   };
 
   const handleInvertSelection = () => {
-    const newSelected = new Set<string>();
+    // 仅对当前页取反，其余页面保持不变，实现累计
+    const newSelected = new Set<string>(selectedRecords);
     pendingData.forEach((record, index) => {
-      const recordId = record.uid || record.id || `index-${index}`;
-      if (!selectedRecords.has(recordId)) {
+      const recordId = (record.uid || record.id || `index-${index}`) as string;
+      if (newSelected.has(recordId)) {
+        newSelected.delete(recordId);
+      } else {
         newSelected.add(recordId);
       }
     });
@@ -375,6 +388,9 @@ export default function UplinkPage() {
         error: result.error,
       });
 
+      // 上线成功后清空已选择记录
+      setSelectedRecords(new Set());
+
       // 重新加载数据
       await loadUplinkInfo();
       await loadPendingData();
@@ -387,6 +403,8 @@ export default function UplinkPage() {
         logs: ["操作失败"],
         error: errorMessage,
       });
+      // 上线失败也清空选择
+      setSelectedRecords(new Set());
     } finally {
       setBusy(false);
     }
@@ -659,9 +677,7 @@ export default function UplinkPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">
-                      每页显示:
-                    </span>
+                    <span className="text-sm text-muted-foreground">每页显示:</span>
                     <select
                       value={pagination.page_size}
                       onChange={(e) =>
@@ -673,6 +689,11 @@ export default function UplinkPage() {
                       <option value={50}>50</option>
                       <option value={100}>100</option>
                       <option value={200}>200</option>
+                      <option value={500}>500</option>
+                      <option value={1000}>1000</option>
+                      <option value={2000}>2000</option>
+                      <option value={5000}>5000</option>
+                      <option value={10000}>10000</option>
                     </select>
                   </div>
                 </div>
@@ -684,14 +705,22 @@ export default function UplinkPage() {
                     onClick={handleSelectAll}
                     className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105"
                   >
-                    {selectedRecords.size === pendingData.length ? (
+                    {pendingData.every((r, i) =>
+                      selectedRecords.has(
+                        (r.uid || r.id || `index-${i}`) as string,
+                      ),
+                    ) ? (
                       <Square className="h-4 w-4" />
                     ) : (
                       <CheckSquare className="h-4 w-4" />
                     )}
-                    {selectedRecords.size === pendingData.length
-                      ? "全不选"
-                      : "全选"}
+                    {pendingData.every((r, i) =>
+                      selectedRecords.has(
+                        (r.uid || r.id || `index-${i}`) as string,
+                      ),
+                    )
+                      ? "全不选本页"
+                      : "全选本页"}
                   </Button>
                   <Button
                     size="sm"
@@ -702,9 +731,7 @@ export default function UplinkPage() {
                     反选
                   </Button>
                   <div className="flex-1" />
-                  <Badge variant="secondary">
-                    已选择 {selectedRecords.size} / {pendingData.length} 条
-                  </Badge>
+                  <Badge variant="secondary">已选择 {selectedRecords.size} 条</Badge>
                   <Badge variant="outline">
                     当前页 {pagination.page}/{pagination.total_pages}，共{" "}
                     {pagination.total_records} 条记录
