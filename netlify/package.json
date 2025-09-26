@@ -1,0 +1,27 @@
+{
+  "name": "pboc-netlify",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "export": "next build && next export"
+  },
+  "dependencies": {
+    "next": "15.4.6",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "mongodb": "^6.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.2",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "typescript": "5.4.5",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "15.4.6",
+    "@netlify/plugin-nextjs": "^5.7.2"
+  }
+}
