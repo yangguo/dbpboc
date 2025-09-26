@@ -109,7 +109,7 @@ export default function Home() {
       <div className="card">
         <div className="card-hdr">
           <div className="card-ttl">MongoDB 搜索</div>
-          <div className="card-desc">面向 Vercel 部署的精简版搜索页</div>
+          <div className="card-desc">面向 Netlify 部署的精简版搜索页</div>
         </div>
         <div className="card-body">
           <form onSubmit={(e) => { e.preventDefault(); search() }} className="row">
