@@ -1,21 +1,12 @@
 [build]
-  publish = ".next"
+  publish = ""
   command = "npm run build"
-
-[build.environment]
-  NEXT_PRIVATE_TARGET = "server"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
 [functions]
   node_bundler = "esbuild"
-
-# Redirect all requests to Next.js for SSR and API routes
-[[redirects]]
-  from = "/*"
-  to = "/.netlify/functions/___netlify-handler"
-  status = 200
 
 # Environment variables configuration
 [context.production.environment]

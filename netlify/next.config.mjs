@@ -1,8 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // For Netlify deployment, keep server-side rendering for API routes
-  // output: 'standalone', // This would be for Docker deployments
+  // Ensure trailingSlash is false for proper routing on Netlify
+  trailingSlash: false,
+  // Enable experimental features for better Netlify compatibility
+  experimental: {
+    // Optimize for serverless deployment
+    serverMinification: false,
+  },
 }
 
 export default nextConfig
