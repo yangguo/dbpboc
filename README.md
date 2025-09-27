@@ -9,7 +9,6 @@ A comprehensive web application for managing and analyzing penalty cases from th
 - **Data Visualization**: Interactive charts and analytics for case trends and statistics  
 - **Multi-Modal Interface**: Modern web frontend and API-first architecture
 - **Real-time Updates**: Live data synchronization and updates
-- **Secure Authentication**: JWT-based authentication and authorization
 - **Mobile Responsive**: Optimized for desktop and mobile devices
 
 ## 🏗️ Architecture
@@ -29,7 +28,6 @@ The system follows a microservices architecture with clear separation of concern
 **Backend (FastAPI)**
 - Python 3.11+ with FastAPI framework
 - MongoDB with Motor async driver  
-- JWT authentication & authorization
 - Document processing (PyMuPDF, pytesseract, OpenCV)
 - Web scraping (Selenium, BeautifulSoup4)
 - Data analysis (pandas, numpy, plotly)
@@ -40,7 +38,6 @@ The system follows a microservices architecture with clear separation of concern
 - Tailwind CSS 4+ for styling
 - React Query for state management
 - Recharts for data visualization
-- NextAuth.js for authentication
 
 **Database**
 - MongoDB for primary data storage
@@ -176,8 +173,6 @@ ALLOWED_HOSTS="http://localhost:3000,https://yourdomain.com"
 **Frontend (.env.local)**
 ```bash
 NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
-NEXTAUTH_SECRET=your-nextauth-secret
-NEXTAUTH_URL=http://localhost:3000
 ```
 
 ## 🤝 Contributing
