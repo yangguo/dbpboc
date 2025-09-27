@@ -1,0 +1,29 @@
+[build]
+  publish = ".next"
+  command = "npm run build"
+
+[build.environment]
+  NEXT_PRIVATE_TARGET = "server"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Redirect all requests to Next.js for SSR and API routes
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/___netlify-handler"
+  status = 200
+
+# Environment variables configuration
+[context.production.environment]
+  MONGODB_URL = ""
+  MONGODB_DB = ""
+  MONGODB_COLLECTION = "pbocdtl"
+
+[context.branch-deploy.environment]
+  MONGODB_URL = ""
+  MONGODB_DB = ""
+  MONGODB_COLLECTION = "pbocdtl"
