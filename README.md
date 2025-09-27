@@ -85,7 +85,7 @@ cd web-frontend
 npm install
 
 # Configure environment
-cp .env.example .env.local
+cp .env.local.example .env.local
 # Edit .env.local with your backend URL and other settings
 ```
 
@@ -164,15 +164,17 @@ The FastAPI backend provides comprehensive API documentation:
 **Backend (.env)**
 ```bash
 MONGODB_URL=mongodb://localhost:27017
-MONGODB_DB=pboc_cases
-SECRET_KEY=your-secret-key-here
+DATABASE_NAME=pboc_cases
+SECRET_KEY=your-secret-key-change-in-production
 TESSERACT_CMD=/usr/bin/tesseract
-ALLOWED_HOSTS="http://localhost:3000,https://yourdomain.com"
+ALLOWED_HOSTS=["http://localhost:3000", "http://127.0.0.1:3000"]
 ```
 
 **Frontend (.env.local)**
 ```bash
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+MONGODB_URL=mongodb://localhost:27017
+MONGODB_DB=your_database_name
+MONGODB_COLLECTION=your_collection_name
 ```
 
 ## 🤝 Contributing
