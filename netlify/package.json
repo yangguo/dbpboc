@@ -6,22 +6,22 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint src",
     "export": "next build && next export"
   },
   "dependencies": {
+    "mongodb": "^6.9.0",
     "next": "16.1.5",
     "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "mongodb": "^6.9.0"
+    "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@netlify/plugin-nextjs": "^5.7.2",
     "@types/node": "20.14.2",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
-    "typescript": "5.4.5",
-    "eslint": "^8.57.0",
-    "eslint-config-next": "15.4.6",
-    "@netlify/plugin-nextjs": "^5.7.2"
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.1.5",
+    "typescript": "5.4.5"
   }
 }
